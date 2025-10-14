@@ -1,4 +1,4 @@
-# Mumei言語 インストールガイド
+# mu lang install　guide
 
 ## 必要要件
 
