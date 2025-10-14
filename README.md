@@ -1,4 +1,4 @@
-# Mumei Programming Language
+# mu programming Language
 
 Pythonをベースにした新しいプログラミング言語「Mumei」のインタプリタ実装です。
 ファイル拡張子は `.mu` を使用します。
