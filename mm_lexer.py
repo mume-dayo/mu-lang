@@ -31,6 +31,10 @@ class TokenType(Enum):
     RETURN = auto()
     ASYNC = auto()
     AWAIT = auto()
+    TRY = auto()
+    CATCH = auto()
+    FINALLY = auto()
+    THROW = auto()
 
     # 演算子
     PLUS = auto()
@@ -96,6 +100,10 @@ class Lexer:
             'return': TokenType.RETURN,
             'async': TokenType.ASYNC,
             'await': TokenType.AWAIT,
+            'try': TokenType.TRY,
+            'catch': TokenType.CATCH,
+            'finally': TokenType.FINALLY,
+            'throw': TokenType.THROW,
             'true': TokenType.TRUE,
             'false': TokenType.FALSE,
             'none': TokenType.NONE,

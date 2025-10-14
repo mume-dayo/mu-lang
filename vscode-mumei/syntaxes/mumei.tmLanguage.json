@@ -35,7 +35,7 @@
       "patterns": [
         {
           "name": "keyword.control.mumei",
-          "match": "\\b(if|else|while|for|in|return)\\b"
+          "match": "\\b(if|else|while|for|in|return|try|catch|finally|throw)\\b"
         },
         {
           "name": "keyword.declaration.mumei",

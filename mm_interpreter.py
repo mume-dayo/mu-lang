@@ -35,6 +35,13 @@ class ReturnValue(Exception):
         self.value = value
 
 
+class MMException(Exception):
+    """Mumei言語の例外"""
+    def __init__(self, message):
+        self.message = message
+        super().__init__(message)
+
+
 class MMFunction:
     """ユーザー定義関数"""
     def __init__(self, name: str, parameters: List[str], body: List[ASTNode], closure: Dict[str, Any]):
@@ -272,6 +279,13 @@ class Interpreter:
                 result = self.evaluate_block(node.body)
             return result
 
+        elif isinstance(node, TryStatement):
+            return self.evaluate_try_statement(node)
+
+        elif isinstance(node, ThrowStatement):
+            message = self.evaluate(node.expression)
+            raise MMException(str(message))
+
         elif isinstance(node, IndexAccess):
             obj = self.evaluate(node.object)
             index = self.evaluate(node.index)
@@ -389,6 +403,55 @@ class Interpreter:
         if value == 0 or value == "" or value == []:
             return False
         return True
+
+    def evaluate_try_statement(self, node: TryStatement) -> Any:
+        """try-catch-finally文の評価"""
+        exception_caught = None
+        result = None
+
+        try:
+            # tryブロックを実行
+            result = self.evaluate_block(node.try_block)
+        except MMException as e:
+            # Mumei言語の例外をキャッチ
+            exception_caught = e
+            if node.catch_block:
+                # catch変数に例外メッセージをバインド
+                catch_env = Environment(self.current_env)
+                catch_env.define(node.catch_variable, str(e.message))
+
+                prev_env = self.current_env
+                self.current_env = catch_env
+                try:
+                    result = self.evaluate_block(node.catch_block)
+                finally:
+                    self.current_env = prev_env
+            else:
+                # catchブロックがない場合は再スロー
+                raise
+        except Exception as e:
+            # Python標準例外もキャッチ
+            exception_caught = e
+            if node.catch_block:
+                # catch変数に例外メッセージをバインド
+                catch_env = Environment(self.current_env)
+                catch_env.define(node.catch_variable, str(e))
+
+                prev_env = self.current_env
+                self.current_env = catch_env
+                try:
+                    result = self.evaluate_block(node.catch_block)
+                finally:
+                    self.current_env = prev_env
+            else:
+                # catchブロックがない場合は再スロー
+                raise
+        finally:
+            # finallyブロックを実行（必ず実行される）
+            if node.finally_block:
+                self.evaluate_block(node.finally_block)
+
+        return result
 
     def run(self, source: str):
         """ソースコードを実行"""

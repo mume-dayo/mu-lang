@@ -119,6 +119,20 @@ class ForStatement(ASTNode):
 
 
 @dataclass
+class TryStatement(ASTNode):
+    try_block: List[ASTNode]
+    catch_variable: Optional[str]
+    catch_block: Optional[List[ASTNode]]
+    finally_block: Optional[List[ASTNode]]
+
+
+@dataclass
+class ThrowStatement(ASTNode):
+    expression: ASTNode
+
+
+
+@dataclass
 class IndexAccess(ASTNode):
     object: ASTNode
     index: ASTNode
@@ -185,6 +199,10 @@ class Parser:
             return self.parse_for_statement()
         elif token.type == TokenType.RETURN:
             return self.parse_return_statement()
+        elif token.type == TokenType.TRY:
+            return self.parse_try_statement()
+        elif token.type == TokenType.THROW:
+            return self.parse_throw_statement()
         elif token.type == TokenType.IDENTIFIER:
             # 代入か関数呼び出し
             if self.peek_token().type == TokenType.ASSIGN:
@@ -300,6 +318,40 @@ class Parser:
         body = self.parse_block()
 
         return ForStatement(var_token.value, iterable, body)
+
+    def parse_try_statement(self) -> TryStatement:
+        self.expect(TokenType.TRY)
+        try_block = self.parse_block()
+
+        catch_variable = None
+        catch_block = None
+        finally_block = None
+
+        # catch節のパース
+        if self.current_token().type == TokenType.CATCH:
+            self.advance()
+            self.expect(TokenType.LPAREN)
+            catch_var_token = self.expect(TokenType.IDENTIFIER)
+            catch_variable = catch_var_token.value
+            self.expect(TokenType.RPAREN)
+            catch_block = self.parse_block()
+
+        # finally節のパース
+        if self.current_token().type == TokenType.FINALLY:
+            self.advance()
+            finally_block = self.parse_block()
+
+        # catchかfinallyのどちらかは必須
+        if catch_block is None and finally_block is None:
+            raise Exception("try statement must have either catch or finally block")
+
+        return TryStatement(try_block, catch_variable, catch_block, finally_block)
+
+    def parse_throw_statement(self) -> ThrowStatement:
+        self.expect(TokenType.THROW)
+        expression = self.parse_expression()
+        self.expect_statement_end()
+        return ThrowStatement(expression)
 
     def parse_block(self) -> List[ASTNode]:
         self.skip_newlines()

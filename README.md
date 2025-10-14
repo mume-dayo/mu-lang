@@ -12,6 +12,7 @@ Pythonをベースにした新しいプログラミング言語「Mumei」のイ
 - **データ構造**: 数値、文字列、真偽値、リスト、None
 - **制御構造**: if/else、while、for ループ
 - **HTTPリクエスト**: 外部APIとの連携が可能（`http_get`, `http_post`, `json_parse`）
+- **例外処理**: `try-catch-finally`と`throw`でエラーハンドリング
 - **Discord Bot**: 簡単にDiscord Botを作成可能（オプション）
 - **非同期処理**: `sleep`, `get_time`などの時間制御機能
 - **独自コマンド**: `mumei`コマンドで`.mu`ファイルを実行
@@ -333,6 +334,39 @@ print("Temperature:", weather_data["main"]["temp"], "°C");
 
 詳細は [HTTP.md](HTTP.md) を参照してください。
 
+### 例外処理の使用
+
+```mu
+# try-catch-finallyでエラーハンドリング
+try {
+    let result = 10 / 0;  # ゼロ除算
+    print(result);
+} catch (error) {
+    print("Error caught:", error);
+} finally {
+    print("Cleanup");
+}
+
+# throwで例外をスロー
+fun divide(a, b) {
+    if (b == 0) {
+        throw "Cannot divide by zero!";
+    }
+    return a / b;
+}
+
+# HTTPリクエストの安全な実行
+try {
+    let response = http_get("https://api.example.com/data");
+    let data = json_parse(response);
+    print("Success:", data);
+} catch (error) {
+    print("API error:", error);
+}
+```
+
+詳細は [EXCEPTION.md](EXCEPTION.md) を参照してください。
+
 ### コメント
 
 ```mu
@@ -461,9 +495,11 @@ mumei-language/
     ├── prime_numbers.mu
     ├── env_demo.mu
     ├── http_demo.mu               # HTTP機能デモ
+    ├── exception_demo.mu          # 例外処理デモ
     ├── discord_bot_simple.mu
     ├── discord_bot_advanced.mu
-    └── discord_bot_api.mu         # API連携Bot
+    ├── discord_bot_api.mu         # API連携Bot
+    └── discord_bot_safe_api.mu    # 例外処理付きBot
 ```
 
 ## アーキテクチャ
@@ -482,7 +518,7 @@ Mumei言語インタプリタは3つの主要なコンポーネントで構成�
 
 - [ ] 辞書(dict)型のサポート
 - [ ] クラスとオブジェクト指向プログラミング
-- [ ] 例外処理(try/catch)
+- [x] 例外処理(try/catch) ✅ 実装済み
 - [ ] モジュールシステム(import)
 - [ ] ファイルI/O関数
 - [ ] より多くの組み込み関数
@@ -494,6 +530,7 @@ Mumei言語インタプリタは3つの主要なコンポーネントで構成�
 - [インストールガイド](INSTALL.md) - セットアップ手順
 - [クイックスタート](QUICKSTART.md) - 5分で始めるMumei
 - [HTTP機能](HTTP.md) - HTTPリクエストとAPI連携
+- [例外処理](EXCEPTION.md) - try-catch-finallyでエラーハンドリング
 - [Discord Bot](DISCORD_BOT.md) - Discord Bot作成ガイド
 - [非同期処理](ASYNC.md) - 時間制御と非同期機能
 - [拡張機能](EXTENSIONS.md) - 拡張機能の概要
