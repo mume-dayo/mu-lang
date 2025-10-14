@@ -1,462 +1,93 @@
-# Mumei Programming Language
+# Mumei Language - Discord Extension
 
-Pythonをベースにした新しいプログラミング言語「Mumei」のインタプリタ実装です。
-ファイル拡張子は `.mu` を使用します。
+Discord Bot functionality extension for Mumei programming language.
 
-## 特徴
+## Overview
 
-- **シンプルな構文**: Pythonの影響を受けたクリーンで読みやすい構文
-- **動的型付け**: 変数の型宣言が不要
-- **関数型プログラミング**: 一級関数とクロージャをサポート
-- **組み込み関数**: `print`, `input`, `len`, `type`, `str`, `int`, `float`, `range` など
-- **データ構造**: 数値、文字列、真偽値、リスト、None
-- **制御構造**: if/else、while、for ループ
-- **独自コマンド**: `mumei`コマンドで`.mu`ファイルを実行
+This branch contains the Discord bot extension for Mumei language. The extension allows you to create Discord bots using simple Mumei syntax.
 
-## インストール
+## Installation
 
-Python 3.6以降が必要です。
-
-```bash
-git clone <repository-url>
-cd mumei-language
-chmod +x mumei  # 実行権限を付与
-```
-
-### システムパスに追加（オプション）
-
-どこからでも`mumei`コマンドを使えるようにするには:
-
-```bash
-# シンボリックリンクを作成
-sudo ln -s "$(pwd)/mumei" /usr/local/bin/mumei
-
-# または環境変数PATHに追加
-export PATH="$PATH:$(pwd)"
-```
-
-### VSCode拡張機能（シンタックスハイライト）
-
-`.mu`ファイルに色をつけるVSCode拡張機能をインストール:
-
-```bash
-cd vscode-mumei
-./install.sh  # macOS/Linux
-# または
-install.bat   # Windows
-```
-
-VSCodeを再起動すると、`.mu`ファイルが自動的にハイライトされます！
-
-詳細は [vscode-mumei/INSTALL.md](vscode-mumei/INSTALL.md) を参照。
-
-## 使い方
-
-### REPLモード
-
-```bash
-./mumei
-# または、パスに追加している場合
-mumei
-```
-
-インタラクティブなREPL(Read-Eval-Print Loop)が起動します:
-
-```
-mumei> let x = 10;
-mumei> let y = 20;
-mumei> print(x + y);
-30
-```
-
-### ファイル実行
-
-```bash
-./mumei examples/hello.mu
-# または
-mumei examples/hello.mu
-```
-
-### ヘルプ表示
-
-```bash
-mumei --help
-```
-
-### バージョン表示
-
-```bash
-mumei --version
-```
-
-## 言語仕様
-
-### 変数宣言
-
-変数宣言には `let` キーワードを使用します:
-
-```mu
-let x = 10;
-let name = "Mumei Language";
-let is_active = true;
-let numbers = [1, 2, 3, 4, 5];
-```
-
-### データ型
-
-- **数値**: 整数と浮動小数点数
-  ```mu
-  let age = 25;
-  let pi = 3.14159;
-  ```
-
-- **文字列**: シングルクォートまたはダブルクォート
-  ```mu
-  let message = "Hello, World!";
-  let char = 'A';
-  ```
-
-- **真偽値**: `true` と `false`
-  ```mu
-  let is_valid = true;
-  let is_empty = false;
-  ```
-
-- **リスト**: 複数の要素を持つコレクション
-  ```mu
-  let fruits = ["apple", "banana", "cherry"];
-  let mixed = [1, "two", true, [3, 4]];
-  ```
-
-- **None**: 値がないことを表す
-  ```mu
-  let empty = none;
-  ```
-
-### 演算子
-
-#### 算術演算子
-```mu
-let a = 10 + 5;   # 加算
-let b = 10 - 5;   # 減算
-let c = 10 * 5;   # 乗算
-let d = 10 / 5;   # 除算
-let e = 10 % 3;   # 剰余
-```
-
-#### 比較演算子
-```mu
-let result1 = 10 == 10;  # 等しい
-let result2 = 10 != 5;   # 等しくない
-let result3 = 10 > 5;    # より大きい
-let result4 = 10 < 20;   # より小さい
-let result5 = 10 >= 10;  # 以上
-let result6 = 10 <= 20;  # 以下
-```
-
-#### 論理演算子
-```mu
-let result1 = true and false;  # AND
-let result2 = true or false;   # OR
-let result3 = not true;        # NOT
-```
-
-### 関数定義
-
-関数は `fun` キーワードで定義します:
-
-```mu
-fun add(a, b) {
-    return a + b;
-}
-
-let result = add(10, 20);
-print(result);  # 30
-```
-
-再帰関数もサポートされています:
-
-```mu
-fun factorial(n) {
-    if (n <= 1) {
-        return 1;
-    }
-    return n * factorial(n - 1);
-}
-
-print(factorial(5));  # 120
-```
-
-### 制御構造
-
-#### if/else文
-
-```mu
-let age = 20;
-
-if (age >= 18) {
-    print("成人です");
-} else {
-    print("未成年です");
-}
-```
-
-#### whileループ
-
-```mu
-let i = 0;
-while (i < 5) {
-    print(i);
-    i = i + 1;
-}
-```
-
-#### forループ
-
-```mu
-# リストのイテレーション
-let fruits = ["apple", "banana", "cherry"];
-for (fruit in fruits) {
-    print(fruit);
-}
-
-# 範囲のイテレーション
-for (i in range(5)) {
-    print(i);  # 0, 1, 2, 3, 4
-}
-```
-
-### リスト操作
-
-```mu
-let numbers = [1, 2, 3];
-
-# 要素へのアクセス
-let first = numbers[0];
-
-# 要素の追加
-append(numbers, 4);
-
-# 要素の削除
-let last = pop(numbers);
-
-# リストの長さ
-let size = len(numbers);
-
-# イテレーション
-for (num in numbers) {
-    print(num);
-}
-```
-
-### 組み込み関数
-
-#### 基本関数
-- `print(...)`: 値を出力
-- `input(prompt)`: ユーザー入力を取得
-- `len(obj)`: リストまたは文字列の長さを取得
-- `type(obj)`: オブジェクトの型を取得
-- `str(obj)`: 文字列に変換
-- `int(obj)`: 整数に変換
-- `float(obj)`: 浮動小数点数に変換
-- `range(start, stop)`: 範囲を生成
-- `append(list, item)`: リストに要素を追加
-- `pop(list, index)`: リストから要素を削除
-
-#### 環境変数
-- `env(key, default)`: 環境変数を取得（デフォルト値指定可）
-- `env_set(key, value)`: 環境変数を設定
-- `env_has(key)`: 環境変数の存在チェック
-- `env_list()`: すべての環境変数名を取得
-
-### 環境変数の使用
-
-```mu
-# 環境変数を取得
-let user = env("USER");
-let home = env("HOME");
-
-# デフォルト値を指定
-let api_key = env("API_KEY", "default_key");
-
-# 環境変数の存在チェック
-if (env_has("DEBUG")) {
-    print("Debug mode enabled");
-}
-
-# 環境変数を設定
-env_set("MY_VAR", "Hello");
-```
-
-**Discord Bot Tokenの安全な使用例:**
-```mu
-# 環境変数からトークンを取得
-let token = env("DISCORD_BOT_TOKEN");
-
-if (token == none) {
-    print("Error: DISCORD_BOT_TOKEN not set!");
-} else {
-    discord_run(token);
-}
-```
-
-### コメント
-
-```mu
-# これは単一行コメントです
-// これも単一行コメントです
-
-let x = 10;  # 行末のコメント
-```
-
-## サンプルプログラム
-
-### Hello World
-
-```mu
-print("Hello, World!");
-```
-
-### FizzBuzz
-
-```mu
-for (i in range(1, 31)) {
-    if (i % 15 == 0) {
-        print("FizzBuzz");
-    } else {
-        if (i % 3 == 0) {
-            print("Fizz");
-        } else {
-            if (i % 5 == 0) {
-                print("Buzz");
-            } else {
-                print(i);
-            }
-        }
-    }
-}
-```
-
-### フィボナッチ数列
-
-```mu
-fun fibonacci(n) {
-    if (n <= 1) {
-        return n;
-    }
-    return fibonacci(n - 1) + fibonacci(n - 2);
-}
-
-for (i in range(10)) {
-    print("F(" + str(i) + ") =", fibonacci(i));
-}
-```
-
-詳細なサンプルは `examples/` ディレクトリを参照してください。
-
-## Discord Bot機能 🤖
-
-Mumei言語では、シンプルにDiscord botを作成できます！
-
-### セットアップ
+### 1. Install discord.py
 
 ```bash
 pip install discord.py
 ```
 
-### 最小構成のBot
+### 2. Copy the Discord module
+
+The Discord extension consists of a single file:
+- `mm_discord.py` - Discord bot module
+
+Copy it to your Mumei language directory, and the interpreter will automatically detect and load it.
+
+## Quick Start
+
+### Basic Bot
 
 ```mu
-# Botを作成
+# Create bot
 discord_create_bot("!");
 
-# コマンドを定義
+# Define command
 fun cmd_hello(ctx) {
     return "Hello from Mumei!";
 }
 
-# コマンドを登録
+# Register command
 discord_command("hello", cmd_hello);
 
-# Botを起動
-discord_run("YOUR_BOT_TOKEN");
+# Run bot
+let token = env("DISCORD_BOT_TOKEN");
+discord_run(token);
 ```
 
-### 利用可能な関数
+### Setting Token
 
-- `discord_create_bot(prefix)` - Botインスタンスを作成
-- `discord_command(name, callback)` - コマンドを登録
-- `discord_on_event(event, callback)` - イベントハンドラを登録
-- `discord_run(token)` - Botを起動
+```bash
+# Set environment variable
+export DISCORD_BOT_TOKEN="your_token_here"
 
-### サンプル
-
-- `examples/discord_bot_simple.mu` - シンプルなBot
-- `examples/discord_bot_advanced.mu` - 高度な機能を持つBot
-
-詳細は [DISCORD_BOT.md](DISCORD_BOT.md) を参照してください。
-
-## プロジェクト構造
-
-```
-mumei-language/
-├── mumei                      # メイン実行ファイル
-├── mm_lexer.py                # レキサー(トークナイザー)
-├── mm_parser.py               # パーサー(AST生成)
-├── mm_interpreter.py          # インタプリタ(評価器)
-├── mm_discord.py              # Discord bot サポート
-├── README.md                  # このファイル
-├── DISCORD_BOT.md             # Discord bot ドキュメント
-├── INSTALL.md                 # インストールガイド
-├── QUICKSTART.md              # クイックスタート
-├── vscode-mumei/              # VSCode拡張機能
-│   ├── package.json
-│   ├── language-configuration.json
-│   ├── syntaxes/
-│   │   └── mumei.tmLanguage.json
-│   ├── README.md
-│   ├── INSTALL.md
-│   ├── install.sh             # インストールスクリプト(macOS/Linux)
-│   └── install.bat            # インストールスクリプト(Windows)
-└── examples/                  # サンプルプログラム
-    ├── hello.mu
-    ├── fibonacci.mu
-    ├── fizzbuzz.mu
-    ├── factorial.mu
-    ├── list_operations.mu
-    ├── prime_numbers.mu
-    ├── env_demo.mu
-    ├── discord_bot_simple.mu
-    └── discord_bot_advanced.mu
+# Run bot
+mumei discord_bot_simple.mu
 ```
 
-## アーキテクチャ
+## Available Functions
 
-Mumei言語インタプリタは3つの主要なコンポーネントで構成されています:
+- **discord_create_bot(prefix)** - Create bot instance
+- **discord_command(name, callback)** - Register command
+- **discord_on_event(event, callback)** - Register event handler
+- **discord_run(token)** - Start bot
 
-1. **レキサー(Lexer)**: ソースコードをトークンに分割
-2. **パーサー(Parser)**: トークンから抽象構文木(AST)を生成
-3. **インタプリタ(Interpreter)**: ASTを評価して実行
+## Examples
 
-```
-ソースコード → レキサー → トークン → パーサー → AST → インタプリタ → 実行
-```
+This branch includes:
+- `examples/discord_bot_simple.mu` - Simple bot
+- `examples/discord_bot_advanced.mu` - Advanced bot
+- `examples/DISCORD_QUICKSTART.md` - 5-minute guide
 
-## 今後の拡張案
+## Documentation
 
-- [ ] 辞書(dict)型のサポート
-- [ ] クラスとオブジェクト指向プログラミング
-- [ ] 例外処理(try/catch)
-- [ ] モジュールシステム(import)
-- [ ] ファイルI/O関数
-- [ ] より多くの組み込み関数
-- [ ] 標準ライブラリ
-- [ ] デバッガーのサポート
+See `DISCORD_BOT.md` for complete documentation.
 
-## ライセンス
+## Main Repository
+
+This is the Discord extension branch. For the core Mumei language:
+
+👉 **Main Branch**: https://github.com/mume-dayo/mu-lang
+
+## Other Branches
+
+- **main** - Core Mumei language
+- **discord-extension** - This extension (you are here)
+- **vscode-extension** - VSCode syntax highlighting
+
+## Requirements
+
+- Mumei language interpreter (from main branch)
+- Python 3.6+
+- discord.py library
+
+## License
 
 MIT License
-
-## 作者
-
-Created as a learning project for building programming language interpreters.
