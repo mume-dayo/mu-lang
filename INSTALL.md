@@ -1,4 +1,4 @@
-# mu lang install　guide
+# mu lang install guide
 
 ## 必要要件
 
