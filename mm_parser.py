@@ -45,6 +45,11 @@ class ListLiteral(ASTNode):
 
 
 @dataclass
+class DictLiteral(ASTNode):
+    pairs: List[tuple]  # [(key, value), ...]
+
+
+@dataclass
 class Identifier(ASTNode):
     name: str
 
@@ -138,6 +143,25 @@ class IndexAccess(ASTNode):
     index: ASTNode
 
 
+@dataclass
+class MemberAccess(ASTNode):
+    object: ASTNode
+    member: str
+
+
+@dataclass
+class ClassDeclaration(ASTNode):
+    name: str
+    methods: List[ASTNode]  # FunctionDeclarations
+    parent: Optional[str] = None
+
+
+@dataclass
+class NewExpression(ASTNode):
+    class_name: str
+    arguments: List[ASTNode]
+
+
 class Parser:
     def __init__(self, tokens: List[Token]):
         self.tokens = tokens
@@ -191,6 +215,8 @@ class Parser:
             return self.parse_variable_declaration()
         elif token.type == TokenType.FUN:
             return self.parse_function_declaration()
+        elif token.type == TokenType.CLASS:
+            return self.parse_class_declaration()
         elif token.type == TokenType.IF:
             return self.parse_if_statement()
         elif token.type == TokenType.WHILE:
@@ -271,6 +297,33 @@ class Parser:
         body = self.parse_block()
 
         return FunctionDeclaration(name, parameters, body)
+
+    def parse_class_declaration(self) -> ClassDeclaration:
+        self.expect(TokenType.CLASS)
+        name_token = self.expect(TokenType.IDENTIFIER)
+        class_name = name_token.value
+
+        # 継承のサポート（オプション）
+        parent = None
+        if self.current_token().type == TokenType.COLON:
+            self.advance()
+            parent_token = self.expect(TokenType.IDENTIFIER)
+            parent = parent_token.value
+
+        self.skip_newlines()
+        self.expect(TokenType.LBRACE)
+        self.skip_newlines()
+
+        # メソッドをパース
+        methods = []
+        while self.current_token().type != TokenType.RBRACE:
+            if self.current_token().type == TokenType.FUN:
+                method = self.parse_function_declaration()
+                methods.append(method)
+            self.skip_newlines()
+
+        self.expect(TokenType.RBRACE)
+        return ClassDeclaration(class_name, methods, parent)
 
     def parse_return_statement(self) -> ReturnStatement:
         self.expect(TokenType.RETURN)
@@ -487,6 +540,12 @@ class Parser:
                 self.expect(TokenType.RBRACKET)
                 expr = IndexAccess(expr, index)
 
+            elif self.current_token().type == TokenType.DOT:
+                # メンバーアクセス
+                self.advance()
+                member_token = self.expect(TokenType.IDENTIFIER)
+                expr = MemberAccess(expr, member_token.value)
+
             else:
                 break
 
@@ -528,6 +587,12 @@ class Parser:
         elif token.type == TokenType.LBRACKET:
             return self.parse_list_literal()
 
+        elif token.type == TokenType.LBRACE:
+            return self.parse_dict_literal()
+
+        elif token.type == TokenType.NEW:
+            return self.parse_new_expression()
+
         else:
             raise SyntaxError(f"Unexpected token {token.type.name} at {token.line}:{token.column}")
 
@@ -546,3 +611,44 @@ class Parser:
 
         self.expect(TokenType.RBRACKET)
         return ListLiteral(elements)
+
+    def parse_dict_literal(self) -> DictLiteral:
+        self.expect(TokenType.LBRACE)
+        pairs = []
+
+        if self.current_token().type != TokenType.RBRACE:
+            # key: value のペアをパース
+            key = self.parse_expression()
+            self.expect(TokenType.COLON)
+            value = self.parse_expression()
+            pairs.append((key, value))
+
+            while self.current_token().type == TokenType.COMMA:
+                self.advance()
+                if self.current_token().type == TokenType.RBRACE:
+                    break
+                key = self.parse_expression()
+                self.expect(TokenType.COLON)
+                value = self.parse_expression()
+                pairs.append((key, value))
+
+        self.expect(TokenType.RBRACE)
+        return DictLiteral(pairs)
+
+    def parse_new_expression(self) -> NewExpression:
+        self.expect(TokenType.NEW)
+        class_name_token = self.expect(TokenType.IDENTIFIER)
+        class_name = class_name_token.value
+
+        # コンストラクタ引数
+        arguments = []
+        if self.current_token().type == TokenType.LPAREN:
+            self.advance()
+            if self.current_token().type != TokenType.RPAREN:
+                arguments.append(self.parse_expression())
+                while self.current_token().type == TokenType.COMMA:
+                    self.advance()
+                    arguments.append(self.parse_expression())
+            self.expect(TokenType.RPAREN)
+
+        return NewExpression(class_name, arguments)

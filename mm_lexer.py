@@ -35,6 +35,8 @@ class TokenType(Enum):
     CATCH = auto()
     FINALLY = auto()
     THROW = auto()
+    CLASS = auto()
+    NEW = auto()
 
     # 演算子
     PLUS = auto()
@@ -63,6 +65,7 @@ class TokenType(Enum):
     COMMA = auto()
     SEMICOLON = auto()
     COLON = auto()
+    DOT = auto()
 
     # その他
     EOF = auto()
@@ -104,6 +107,8 @@ class Lexer:
             'catch': TokenType.CATCH,
             'finally': TokenType.FINALLY,
             'throw': TokenType.THROW,
+            'class': TokenType.CLASS,
+            'new': TokenType.NEW,
             'true': TokenType.TRUE,
             'false': TokenType.FALSE,
             'none': TokenType.NONE,
@@ -315,6 +320,9 @@ class Lexer:
             elif char == ':':
                 self.advance()
                 self.tokens.append(Token(TokenType.COLON, None, line, col))
+            elif char == '.':
+                self.advance()
+                self.tokens.append(Token(TokenType.DOT, None, line, col))
             else:
                 raise SyntaxError(f"Unexpected character '{char}' at {line}:{col}")
 
