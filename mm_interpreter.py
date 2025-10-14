@@ -28,6 +28,27 @@ try:
 except ImportError:
     HTTP_AVAILABLE = False
 
+# ファイルI/O機能をインポート
+try:
+    from mm_file import setup_file_builtins
+    FILE_AVAILABLE = True
+except ImportError:
+    FILE_AVAILABLE = False
+
+# 標準ライブラリをインポート
+try:
+    from mm_stdlib import setup_stdlib_builtins
+    STDLIB_AVAILABLE = True
+except ImportError:
+    STDLIB_AVAILABLE = False
+
+# デバッガーをインポート
+try:
+    from mm_debug import setup_debug_builtins
+    DEBUG_AVAILABLE = True
+except ImportError:
+    DEBUG_AVAILABLE = False
+
 
 class ReturnValue(Exception):
     """return文の実装用"""
@@ -52,6 +73,43 @@ class MMFunction:
 
     def __repr__(self):
         return f"<function {self.name}>"
+
+
+class MMClass:
+    """ユーザー定義クラス"""
+    def __init__(self, name: str, methods: Dict[str, MMFunction], parent: Optional['MMClass'] = None):
+        self.name = name
+        self.methods = methods
+        self.parent = parent
+
+    def __repr__(self):
+        return f"<class {self.name}>"
+
+
+class MMInstance:
+    """クラスのインスタンス"""
+    def __init__(self, mm_class: MMClass):
+        self.mm_class = mm_class
+        self.fields = {}  # インスタンス変数
+
+    def get(self, name: str):
+        # まずインスタンス変数を確認
+        if name in self.fields:
+            return self.fields[name]
+        # 次にメソッドを確認
+        if name in self.mm_class.methods:
+            return self.mm_class.methods[name]
+        # 親クラスを確認
+        if self.mm_class.parent:
+            if name in self.mm_class.parent.methods:
+                return self.mm_class.parent.methods[name]
+        raise AttributeError(f"'{self.mm_class.name}' object has no attribute '{name}'")
+
+    def set(self, name: str, value: Any):
+        self.fields[name] = value
+
+    def __repr__(self):
+        return f"<{self.mm_class.name} instance>"
 
 
 class Environment:
@@ -118,8 +176,11 @@ class Interpreter:
                 str: "string",
                 bool: "bool",
                 list: "list",
+                dict: "dict",
                 type(None): "none",
                 MMFunction: "function",
+                MMClass: "class",
+                MMInstance: "instance",
             }
             return type_names.get(type(obj), "unknown")
 
@@ -195,6 +256,18 @@ class Interpreter:
         if HTTP_AVAILABLE:
             setup_http_builtins(self.global_env)
 
+        # ファイルI/O機能を追加
+        if FILE_AVAILABLE:
+            setup_file_builtins(self.global_env)
+
+        # 標準ライブラリを追加
+        if STDLIB_AVAILABLE:
+            setup_stdlib_builtins(self.global_env)
+
+        # デバッガーを追加
+        if DEBUG_AVAILABLE:
+            setup_debug_builtins(self.global_env)
+
     def evaluate(self, node: ASTNode) -> Any:
         """ASTノードを評価"""
         if isinstance(node, Program):
@@ -217,6 +290,18 @@ class Interpreter:
 
         elif isinstance(node, ListLiteral):
             return [self.evaluate(elem) for elem in node.elements]
+
+        elif isinstance(node, DictLiteral):
+            result_dict = {}
+            for key_node, value_node in node.pairs:
+                key = self.evaluate(key_node)
+                value = self.evaluate(value_node)
+                # キーは文字列または数値のみ許可
+                if isinstance(key, (str, int, float)):
+                    result_dict[key] = value
+                else:
+                    raise TypeError(f"Dictionary key must be string or number, got {type(key).__name__}")
+            return result_dict
 
         elif isinstance(node, Identifier):
             return self.current_env.get(node.name)
@@ -286,6 +371,79 @@ class Interpreter:
             message = self.evaluate(node.expression)
             raise MMException(str(message))
 
+        elif isinstance(node, ClassDeclaration):
+            # クラス定義を評価
+            methods = {}
+            for method_node in node.methods:
+                if isinstance(method_node, FunctionDeclaration):
+                    func = MMFunction(
+                        method_node.name,
+                        method_node.parameters,
+                        method_node.body,
+                        self.current_env
+                    )
+                    methods[method_node.name] = func
+
+            # 親クラスの取得
+            parent = None
+            if node.parent:
+                parent = self.current_env.get(node.parent)
+                if not isinstance(parent, MMClass):
+                    raise TypeError(f"'{node.parent}' is not a class")
+
+            mm_class = MMClass(node.name, methods, parent)
+            self.current_env.define(node.name, mm_class)
+            return None
+
+        elif isinstance(node, NewExpression):
+            # new ClassName() でインスタンスを作成
+            mm_class = self.current_env.get(node.class_name)
+            if not isinstance(mm_class, MMClass):
+                raise TypeError(f"'{node.class_name}' is not a class")
+
+            instance = MMInstance(mm_class)
+
+            # コンストラクタ（__init__メソッド）を呼び出し
+            if '__init__' in mm_class.methods:
+                constructor = mm_class.methods['__init__']
+                args = [self.evaluate(arg) for arg in node.arguments]
+
+                # selfを追加してコンストラクタを呼び出し
+                if len(args) + 1 != len(constructor.parameters):
+                    raise TypeError(
+                        f"__init__() takes {len(constructor.parameters)} arguments but {len(args) + 1} were given"
+                    )
+
+                func_env = Environment(constructor.closure)
+                func_env.define('self', instance)
+                for param, arg in zip(constructor.parameters[1:], args):
+                    func_env.define(param, arg)
+
+                prev_env = self.current_env
+                self.current_env = func_env
+                try:
+                    self.evaluate_block(constructor.body)
+                except ReturnValue:
+                    pass  # コンストラクタからのreturnは無視
+                finally:
+                    self.current_env = prev_env
+
+            return instance
+
+        elif isinstance(node, MemberAccess):
+            # オブジェクトのメンバーアクセス
+            obj = self.evaluate(node.object)
+
+            if isinstance(obj, MMInstance):
+                return obj.get(node.member)
+            elif isinstance(obj, dict):
+                # 辞書のキーアクセス
+                if node.member in obj:
+                    return obj[node.member]
+                raise KeyError(f"Key '{node.member}' not found in dictionary")
+            else:
+                raise AttributeError(f"'{type(obj).__name__}' object has no attribute '{node.member}'")
+
         elif isinstance(node, IndexAccess):
             obj = self.evaluate(node.object)
             index = self.evaluate(node.index)
@@ -294,6 +452,11 @@ class Interpreter:
                 if not isinstance(index, int):
                     raise TypeError("Index must be an integer")
                 return obj[index]
+            elif isinstance(obj, dict):
+                # 辞書のキーアクセス
+                if index in obj:
+                    return obj[index]
+                raise KeyError(f"Key '{index}' not found in dictionary")
             else:
                 raise TypeError(f"Cannot index {type(obj).__name__}")
 
