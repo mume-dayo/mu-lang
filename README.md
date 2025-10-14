@@ -16,7 +16,6 @@ Visual Studio Code extension for Mumei (`.mu`) programming language syntax highl
 ### Quick Install (Recommended)
 
 ```bash
-cd vscode-mumei
 ./install.sh       # macOS/Linux
 # or
 install.bat        # Windows
@@ -28,12 +27,12 @@ Restart VSCode and open any `.mu` file!
 
 **macOS/Linux:**
 ```bash
-cp -r vscode-mumei ~/.vscode/extensions/mumei-language-1.0.0
+cp -r . ~/.vscode/extensions/mumei-language-1.0.0
 ```
 
 **Windows:**
 ```powershell
-Copy-Item -Recurse vscode-mumei "$env:USERPROFILE\.vscode\extensions\mumei-language-1.0.0"
+Copy-Item -Recurse . "$env:USERPROFILE\.vscode\extensions\mumei-language-1.0.0"
 ```
 
 ## Supported Syntax
@@ -54,7 +53,7 @@ Copy-Item -Recurse vscode-mumei "$env:USERPROFILE\.vscode\extensions\mumei-langu
 - Boolean: `true`, `false`
 - Null: `none`
 
-## Screenshot
+## Example
 
 ```mu
 # Comments are green
@@ -84,19 +83,17 @@ Works with all VSCode themes. Recommended:
 
 ## Main Repository
 
-This is the VSCode extension branch. For the Mumei language itself:
+This is the **vscode-extension** branch. For the Mumei language interpreter, see the **main** branch.
 
-👉 **Main Branch**: https://github.com/mume-dayo/mu-lang
+## Repository Branches
 
-## Other Branches
-
-- **main** - Core Mumei language
+- **main** - Core Mumei language interpreter
 - **discord-extension** - Discord bot functionality
 - **vscode-extension** - This extension (you are here)
 
 ## Documentation
 
-See `vscode-mumei/INSTALL.md` for detailed installation instructions.
+See [INSTALL.md](INSTALL.md) for detailed installation instructions.
 
 ## Version
 
