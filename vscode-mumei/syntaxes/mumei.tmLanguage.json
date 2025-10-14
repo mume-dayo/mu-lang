@@ -113,7 +113,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.mumei",
-          "match": "\\b(print|input|len|type|str|int|float|range|append|pop|env|env_set|env_has|env_list)\\b"
+          "match": "\\b(print|input|len|type|str|int|float|range|append|pop|env|env_set|env_has|env_list|http_get|http_post|http_request|json_parse|json_stringify|sleep|get_time|async_run|await_task)\\b"
         }
       ]
     },

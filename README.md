@@ -11,6 +11,9 @@ Pythonをベースにした新しいプログラミング言語「Mumei」のイ
 - **組み込み関数**: `print`, `input`, `len`, `type`, `str`, `int`, `float`, `range` など
 - **データ構造**: 数値、文字列、真偽値、リスト、None
 - **制御構造**: if/else、while、for ループ
+- **HTTPリクエスト**: 外部APIとの連携が可能（`http_get`, `http_post`, `json_parse`）
+- **Discord Bot**: 簡単にDiscord Botを作成可能（オプション）
+- **非同期処理**: `sleep`, `get_time`などの時間制御機能
 - **独自コマンド**: `mumei`コマンドで`.mu`ファイルを実行
 
 ## インストール
@@ -269,6 +272,13 @@ for (num in numbers) {
 - `env_has(key)`: 環境変数の存在チェック
 - `env_list()`: すべての環境変数名を取得
 
+#### HTTPリクエスト
+- `http_get(url)`: GETリクエストを送信
+- `http_post(url, data, headers)`: POSTリクエストを送信
+- `http_request(method, url, data, headers)`: カスタムHTTPリクエスト
+- `json_parse(string)`: JSON文字列をパース
+- `json_stringify(object)`: オブジェクトをJSON文字列に変換
+
 ### 環境変数の使用
 
 ```mu
@@ -299,6 +309,29 @@ if (token == none) {
     discord_run(token);
 }
 ```
+
+### HTTPリクエストの使用
+
+```mu
+# GETリクエストを送信
+let response = http_get("https://dog.ceo/api/breeds/image/random");
+let data = json_parse(response);
+print("Dog image:", data["message"]);
+
+# 仮想通貨の価格を取得
+let crypto_response = http_get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd");
+let crypto_data = json_parse(crypto_response);
+print("Bitcoin: $", crypto_data["bitcoin"]["usd"]);
+
+# 天気情報（APIキー必要）
+let api_key = env("OPENWEATHER_API_KEY");
+let url = "https://api.openweathermap.org/data/2.5/weather?q=Tokyo&appid=" + api_key;
+let weather_response = http_get(url);
+let weather_data = json_parse(weather_response);
+print("Temperature:", weather_data["main"]["temp"], "°C");
+```
+
+詳細は [HTTP.md](HTTP.md) を参照してください。
 
 ### コメント
 
@@ -393,6 +426,7 @@ discord_run("YOUR_BOT_TOKEN");
 
 - `examples/discord_bot_simple.mu` - シンプルなBot
 - `examples/discord_bot_advanced.mu` - 高度な機能を持つBot
+- `examples/discord_bot_api.mu` - HTTPリクエストを使ったAPI連携Bot
 
 詳細は [DISCORD_BOT.md](DISCORD_BOT.md) を参照してください。
 
@@ -426,8 +460,10 @@ mumei-language/
     ├── list_operations.mu
     ├── prime_numbers.mu
     ├── env_demo.mu
+    ├── http_demo.mu               # HTTP機能デモ
     ├── discord_bot_simple.mu
-    └── discord_bot_advanced.mu
+    ├── discord_bot_advanced.mu
+    └── discord_bot_api.mu         # API連携Bot
 ```
 
 ## アーキテクチャ
@@ -452,6 +488,23 @@ Mumei言語インタプリタは3つの主要なコンポーネントで構成�
 - [ ] より多くの組み込み関数
 - [ ] 標準ライブラリ
 - [ ] デバッガーのサポート
+
+## ドキュメント
+
+- [インストールガイド](INSTALL.md) - セットアップ手順
+- [クイックスタート](QUICKSTART.md) - 5分で始めるMumei
+- [HTTP機能](HTTP.md) - HTTPリクエストとAPI連携
+- [Discord Bot](DISCORD_BOT.md) - Discord Bot作成ガイド
+- [非同期処理](ASYNC.md) - 時間制御と非同期機能
+- [拡張機能](EXTENSIONS.md) - 拡張機能の概要
+
+## Repository Branches
+
+このリポジトリは機能ごとに以下のブランチに分かれています:
+
+- **main** - コア言語実装（このブランチ）
+- **vscode-extension** - VSCode拡張機能（シンタックスハイライト）
+- **discord-extension** - Discord Bot拡張機能
 
 ## ライセンス
 

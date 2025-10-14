@@ -21,6 +21,13 @@ try:
 except ImportError:
     ASYNC_AVAILABLE = False
 
+# HTTP機能をインポート
+try:
+    from mm_http import setup_http_builtins
+    HTTP_AVAILABLE = True
+except ImportError:
+    HTTP_AVAILABLE = False
+
 
 class ReturnValue(Exception):
     """return文の実装用"""
@@ -176,6 +183,10 @@ class Interpreter:
         # 非同期機能を追加（利用可能な場合）
         if ASYNC_AVAILABLE:
             setup_async_builtins(self.global_env)
+
+        # HTTP機能を追加
+        if HTTP_AVAILABLE:
+            setup_http_builtins(self.global_env)
 
     def evaluate(self, node: ASTNode) -> Any:
         """ASTノードを評価"""
