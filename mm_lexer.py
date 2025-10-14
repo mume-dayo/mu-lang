@@ -29,6 +29,8 @@ class TokenType(Enum):
     FOR = auto()
     IN = auto()
     RETURN = auto()
+    ASYNC = auto()
+    AWAIT = auto()
 
     # 演算子
     PLUS = auto()
@@ -92,6 +94,8 @@ class Lexer:
             'for': TokenType.FOR,
             'in': TokenType.IN,
             'return': TokenType.RETURN,
+            'async': TokenType.ASYNC,
+            'await': TokenType.AWAIT,
             'true': TokenType.TRUE,
             'false': TokenType.FALSE,
             'none': TokenType.NONE,

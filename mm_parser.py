@@ -85,11 +85,17 @@ class FunctionDeclaration(ASTNode):
     name: str
     parameters: List[str]
     body: List[ASTNode]
+    is_async: bool = False
 
 
 @dataclass
 class ReturnStatement(ASTNode):
     value: Optional[ASTNode]
+
+
+@dataclass
+class AwaitExpression(ASTNode):
+    expression: ASTNode
 
 
 @dataclass

@@ -14,6 +14,13 @@ try:
 except ImportError:
     DISCORD_AVAILABLE = False
 
+# 非同期機能をインポート（オプショナル）
+try:
+    from mm_async import setup_async_builtins
+    ASYNC_AVAILABLE = True
+except ImportError:
+    ASYNC_AVAILABLE = False
+
 
 class ReturnValue(Exception):
     """return文の実装用"""
@@ -165,6 +172,10 @@ class Interpreter:
         # Discord機能を追加（利用可能な場合）
         if DISCORD_AVAILABLE:
             setup_discord_builtins(self.global_env)
+
+        # 非同期機能を追加（利用可能な場合）
+        if ASYNC_AVAILABLE:
+            setup_async_builtins(self.global_env)
 
     def evaluate(self, node: ASTNode) -> Any:
         """ASTノードを評価"""
