@@ -8,18 +8,19 @@ This branch contains the Discord bot extension for Mumei language. The extension
 
 ## Installation
 
-### 1. Install discord.py
+### 1. Install Mumei language
+
+First, get the Mumei language interpreter from the **main** branch.
+
+### 2. Install discord.py
 
 ```bash
 pip install discord.py
 ```
 
-### 2. Copy the Discord module
+### 3. Use the examples
 
-The Discord extension consists of a single file:
-- `mm_discord.py` - Discord bot module
-
-Copy it to your Mumei language directory, and the interpreter will automatically detect and load it.
+This branch contains Discord bot examples and documentation. Copy them to your Mumei project directory.
 
 ## Quick Start
 
@@ -70,17 +71,13 @@ This branch includes:
 
 See `DISCORD_BOT.md` for complete documentation.
 
-## Main Repository
+## Repository Branches
 
-This is the Discord extension branch. For the core Mumei language:
-
-👉 **Main Branch**: https://github.com/mume-dayo/mu-lang
-
-## Other Branches
-
-- **main** - Core Mumei language
+- **main** - Core Mumei language interpreter
 - **discord-extension** - This extension (you are here)
 - **vscode-extension** - VSCode syntax highlighting
+
+Switch to the **main** branch to get the Mumei language interpreter.
 
 ## Requirements
 
