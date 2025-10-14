@@ -107,6 +107,7 @@ class AwaitExpression(ASTNode):
 class IfStatement(ASTNode):
     condition: ASTNode
     then_block: List[ASTNode]
+    elif_branches: List[tuple]  # [(condition, body), ...]
     else_block: Optional[List[ASTNode]]
 
 
@@ -134,6 +135,53 @@ class TryStatement(ASTNode):
 @dataclass
 class ThrowStatement(ASTNode):
     expression: ASTNode
+
+
+@dataclass
+class BreakStatement(ASTNode):
+    pass
+
+
+@dataclass
+class ContinueStatement(ASTNode):
+    pass
+
+
+@dataclass
+class PassStatement(ASTNode):
+    pass
+
+
+@dataclass
+class TernaryExpression(ASTNode):
+    condition: ASTNode
+    true_expr: ASTNode
+    false_expr: ASTNode
+
+
+@dataclass
+class WalrusOperator(ASTNode):
+    name: str
+    value: ASTNode
+
+
+@dataclass
+class WithStatement(ASTNode):
+    context_expr: ASTNode
+    variable: Optional[str]
+    body: List[ASTNode]
+
+
+@dataclass
+class MatchStatement(ASTNode):
+    expression: ASTNode
+    cases: List[tuple]  # [(pattern, body), ...]
+
+
+@dataclass
+class CasePattern(ASTNode):
+    pattern: ASTNode
+    is_default: bool = False
 
 
 
@@ -225,10 +273,20 @@ class Parser:
             return self.parse_for_statement()
         elif token.type == TokenType.RETURN:
             return self.parse_return_statement()
+        elif token.type == TokenType.BREAK:
+            return self.parse_break_statement()
+        elif token.type == TokenType.CONTINUE:
+            return self.parse_continue_statement()
+        elif token.type == TokenType.PASS:
+            return self.parse_pass_statement()
         elif token.type == TokenType.TRY:
             return self.parse_try_statement()
         elif token.type == TokenType.THROW:
             return self.parse_throw_statement()
+        elif token.type == TokenType.WITH:
+            return self.parse_with_statement()
+        elif token.type == TokenType.MATCH:
+            return self.parse_match_statement()
         elif token.type == TokenType.IDENTIFIER:
             # 代入か関数呼び出し
             if self.peek_token().type == TokenType.ASSIGN:
@@ -343,12 +401,23 @@ class Parser:
 
         then_block = self.parse_block()
 
+        # elif branches
+        elif_branches = []
+        while self.current_token().type == TokenType.ELIF:
+            self.advance()
+            self.expect(TokenType.LPAREN)
+            elif_condition = self.parse_expression()
+            self.expect(TokenType.RPAREN)
+            elif_body = self.parse_block()
+            elif_branches.append((elif_condition, elif_body))
+
+        # else block
         else_block = None
         if self.current_token().type == TokenType.ELSE:
             self.advance()
             else_block = self.parse_block()
 
-        return IfStatement(condition, then_block, else_block)
+        return IfStatement(condition, then_block, elif_branches, else_block)
 
     def parse_while_statement(self) -> WhileStatement:
         self.expect(TokenType.WHILE)
@@ -422,6 +491,31 @@ class Parser:
         return statements
 
     def parse_expression(self) -> ASTNode:
+        return self.parse_ternary()
+
+    def parse_ternary(self) -> ASTNode:
+        # Parse walrus operator first
+        expr = self.parse_walrus()
+
+        # Check for ternary: expr if condition else expr
+        if self.current_token().type == TokenType.IF:
+            self.advance()
+            condition = self.parse_walrus()
+            self.expect(TokenType.ELSE)
+            false_expr = self.parse_ternary()
+            return TernaryExpression(condition, expr, false_expr)
+
+        return expr
+
+    def parse_walrus(self) -> ASTNode:
+        # Check if this is an identifier followed by :=
+        if self.current_token().type == TokenType.IDENTIFIER and self.peek_token().type == TokenType.WALRUS:
+            name_token = self.current_token()
+            self.advance()  # skip identifier
+            self.advance()  # skip :=
+            value = self.parse_walrus()
+            return WalrusOperator(name_token.value, value)
+
         return self.parse_logical_or()
 
     def parse_logical_or(self) -> ASTNode:
@@ -652,3 +746,66 @@ class Parser:
             self.expect(TokenType.RPAREN)
 
         return NewExpression(class_name, arguments)
+
+    def parse_break_statement(self) -> BreakStatement:
+        self.expect(TokenType.BREAK)
+        self.expect_statement_end()
+        return BreakStatement()
+
+    def parse_continue_statement(self) -> ContinueStatement:
+        self.expect(TokenType.CONTINUE)
+        self.expect_statement_end()
+        return ContinueStatement()
+
+    def parse_pass_statement(self) -> PassStatement:
+        self.expect(TokenType.PASS)
+        self.expect_statement_end()
+        return PassStatement()
+
+    def parse_with_statement(self) -> WithStatement:
+        self.expect(TokenType.WITH)
+        self.expect(TokenType.LPAREN)
+        context_expr = self.parse_expression()
+
+        variable = None
+        if self.current_token().type == TokenType.AS:
+            self.advance()
+            var_token = self.expect(TokenType.IDENTIFIER)
+            variable = var_token.value
+
+        self.expect(TokenType.RPAREN)
+        body = self.parse_block()
+
+        return WithStatement(context_expr, variable, body)
+
+    def parse_match_statement(self) -> MatchStatement:
+        self.expect(TokenType.MATCH)
+        self.expect(TokenType.LPAREN)
+        expression = self.parse_expression()
+        self.expect(TokenType.RPAREN)
+
+        self.skip_newlines()
+        self.expect(TokenType.LBRACE)
+        self.skip_newlines()
+
+        cases = []
+        while self.current_token().type == TokenType.CASE:
+            self.advance()
+
+            # パターンをパース（簡易版）
+            pattern = self.parse_expression()
+            self.expect(TokenType.COLON)
+
+            # ケースのボディをパース（次のcaseまたは}まで）
+            body = []
+            self.skip_newlines()
+            while self.current_token().type not in (TokenType.CASE, TokenType.RBRACE):
+                stmt = self.parse_statement()
+                if stmt:
+                    body.append(stmt)
+                self.skip_newlines()
+
+            cases.append((pattern, body))
+
+        self.expect(TokenType.RBRACE)
+        return MatchStatement(expression, cases)

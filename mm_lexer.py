@@ -24,11 +24,15 @@ class TokenType(Enum):
     LET = auto()
     FUN = auto()
     IF = auto()
+    ELIF = auto()
     ELSE = auto()
     WHILE = auto()
     FOR = auto()
     IN = auto()
     RETURN = auto()
+    BREAK = auto()
+    CONTINUE = auto()
+    PASS = auto()
     ASYNC = auto()
     AWAIT = auto()
     TRY = auto()
@@ -37,6 +41,10 @@ class TokenType(Enum):
     THROW = auto()
     CLASS = auto()
     NEW = auto()
+    WITH = auto()
+    AS = auto()
+    MATCH = auto()
+    CASE = auto()
 
     # 演算子
     PLUS = auto()
@@ -45,6 +53,7 @@ class TokenType(Enum):
     DIVIDE = auto()
     MODULO = auto()
     ASSIGN = auto()
+    WALRUS = auto()  # :=
     EQ = auto()
     NE = auto()
     LT = auto()
@@ -96,11 +105,15 @@ class Lexer:
             'let': TokenType.LET,
             'fun': TokenType.FUN,
             'if': TokenType.IF,
+            'elif': TokenType.ELIF,
             'else': TokenType.ELSE,
             'while': TokenType.WHILE,
             'for': TokenType.FOR,
             'in': TokenType.IN,
             'return': TokenType.RETURN,
+            'break': TokenType.BREAK,
+            'continue': TokenType.CONTINUE,
+            'pass': TokenType.PASS,
             'async': TokenType.ASYNC,
             'await': TokenType.AWAIT,
             'try': TokenType.TRY,
@@ -109,6 +122,10 @@ class Lexer:
             'throw': TokenType.THROW,
             'class': TokenType.CLASS,
             'new': TokenType.NEW,
+            'with': TokenType.WITH,
+            'as': TokenType.AS,
+            'match': TokenType.MATCH,
+            'case': TokenType.CASE,
             'true': TokenType.TRUE,
             'false': TokenType.FALSE,
             'none': TokenType.NONE,
@@ -319,7 +336,11 @@ class Lexer:
                 self.tokens.append(Token(TokenType.SEMICOLON, None, line, col))
             elif char == ':':
                 self.advance()
-                self.tokens.append(Token(TokenType.COLON, None, line, col))
+                if self.current_char() == '=':
+                    self.advance()
+                    self.tokens.append(Token(TokenType.WALRUS, None, line, col))
+                else:
+                    self.tokens.append(Token(TokenType.COLON, None, line, col))
             elif char == '.':
                 self.advance()
                 self.tokens.append(Token(TokenType.DOT, None, line, col))

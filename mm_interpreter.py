@@ -56,6 +56,16 @@ class ReturnValue(Exception):
         self.value = value
 
 
+class BreakException(Exception):
+    """break文の実装用"""
+    pass
+
+
+class ContinueException(Exception):
+    """continue文の実装用"""
+    pass
+
+
 class MMException(Exception):
     """Mumei言語の例外"""
     def __init__(self, message):
@@ -343,14 +353,26 @@ class Interpreter:
             condition = self.evaluate(node.condition)
             if self.is_truthy(condition):
                 return self.evaluate_block(node.then_block)
-            elif node.else_block:
+
+            # Check elif branches
+            for elif_condition, elif_body in node.elif_branches:
+                if self.is_truthy(self.evaluate(elif_condition)):
+                    return self.evaluate_block(elif_body)
+
+            # Check else block
+            if node.else_block:
                 return self.evaluate_block(node.else_block)
             return None
 
         elif isinstance(node, WhileStatement):
             result = None
             while self.is_truthy(self.evaluate(node.condition)):
-                result = self.evaluate_block(node.body)
+                try:
+                    result = self.evaluate_block(node.body)
+                except BreakException:
+                    break
+                except ContinueException:
+                    continue
             return result
 
         elif isinstance(node, ForStatement):
@@ -361,7 +383,12 @@ class Interpreter:
             result = None
             for item in iterable:
                 self.current_env.define(node.variable, item)
-                result = self.evaluate_block(node.body)
+                try:
+                    result = self.evaluate_block(node.body)
+                except BreakException:
+                    break
+                except ContinueException:
+                    continue
             return result
 
         elif isinstance(node, TryStatement):
@@ -459,6 +486,77 @@ class Interpreter:
                 raise KeyError(f"Key '{index}' not found in dictionary")
             else:
                 raise TypeError(f"Cannot index {type(obj).__name__}")
+
+        elif isinstance(node, BreakStatement):
+            raise BreakException()
+
+        elif isinstance(node, ContinueStatement):
+            raise ContinueException()
+
+        elif isinstance(node, PassStatement):
+            return None
+
+        elif isinstance(node, TernaryExpression):
+            condition = self.evaluate(node.condition)
+            if self.is_truthy(condition):
+                return self.evaluate(node.true_expr)
+            else:
+                return self.evaluate(node.false_expr)
+
+        elif isinstance(node, WalrusOperator):
+            value = self.evaluate(node.value)
+            # Check if variable exists, if not define it, otherwise set it
+            if self.current_env.exists(node.name):
+                self.current_env.set(node.name, value)
+            else:
+                self.current_env.define(node.name, value)
+            return value
+
+        elif isinstance(node, WithStatement):
+            # 簡易版のwith文実装
+            context_obj = self.evaluate(node.context_expr)
+
+            # 変数に束縛する場合
+            if node.variable:
+                self.current_env.define(node.variable, context_obj)
+
+            # ブロックを実行
+            try:
+                result = self.evaluate_block(node.body)
+            finally:
+                # リソースのクリーンアップ（close()メソッドがあれば呼ぶ）
+                if isinstance(context_obj, MMInstance) and 'close' in context_obj.mm_class.methods:
+                    close_method = context_obj.get('close')
+                    if isinstance(close_method, MMFunction):
+                        func_env = Environment(close_method.closure)
+                        func_env.define('self', context_obj)
+                        prev_env = self.current_env
+                        self.current_env = func_env
+                        try:
+                            self.evaluate_block(close_method.body)
+                        except ReturnValue:
+                            pass
+                        finally:
+                            self.current_env = prev_env
+
+            return result
+
+        elif isinstance(node, MatchStatement):
+            match_value = self.evaluate(node.expression)
+
+            for pattern, body in node.cases:
+                # 簡易版パターンマッチング（値の等価性のみ）
+                pattern_value = self.evaluate(pattern)
+
+                # _は全てにマッチ（デフォルトケース）
+                if isinstance(pattern, Identifier) and pattern.name == '_':
+                    return self.evaluate_block(body)
+
+                # 値の等価性チェック
+                if match_value == pattern_value:
+                    return self.evaluate_block(body)
+
+            return None
 
         else:
             raise NotImplementedError(f"Evaluation not implemented for {type(node).__name__}")
