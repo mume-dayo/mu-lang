@@ -75,11 +75,12 @@ class MMException(Exception):
 
 class MMFunction:
     """ユーザー定義関数"""
-    def __init__(self, name: str, parameters: List[str], body: List[ASTNode], closure: Dict[str, Any]):
+    def __init__(self, name: str, parameters: List[str], body: List[ASTNode], closure: Dict[str, Any], variadic_param: Optional[str] = None):
         self.name = name
         self.parameters = parameters
         self.body = body
         self.closure = closure
+        self.variadic_param = variadic_param  # 可変長引数名
 
     def __repr__(self):
         return f"<function {self.name}>"
@@ -301,6 +302,27 @@ class Interpreter:
         elif isinstance(node, ListLiteral):
             return [self.evaluate(elem) for elem in node.elements]
 
+        elif isinstance(node, ListComprehension):
+            # リスト内包表記の評価
+            iterable = self.evaluate(node.iterable)
+            if not isinstance(iterable, (list, str)):
+                raise TypeError("List comprehension requires an iterable")
+
+            result = []
+            for item in iterable:
+                # イテレーション変数を定義
+                self.current_env.define(node.variable, item)
+
+                # 条件がある場合はチェック
+                if node.condition:
+                    if not self.is_truthy(self.evaluate(node.condition)):
+                        continue
+
+                # 式を評価してリストに追加
+                result.append(self.evaluate(node.expression))
+
+            return result
+
         elif isinstance(node, DictLiteral):
             result_dict = {}
             for key_node, value_node in node.pairs:
@@ -311,6 +333,34 @@ class Interpreter:
                     result_dict[key] = value
                 else:
                     raise TypeError(f"Dictionary key must be string or number, got {type(key).__name__}")
+            return result_dict
+
+        elif isinstance(node, DictComprehension):
+            # 辞書内包表記の評価
+            iterable = self.evaluate(node.iterable)
+            if not isinstance(iterable, (list, str)):
+                raise TypeError("Dictionary comprehension requires an iterable")
+
+            result_dict = {}
+            for item in iterable:
+                # イテレーション変数を定義
+                self.current_env.define(node.variable, item)
+
+                # 条件がある場合はチェック
+                if node.condition:
+                    if not self.is_truthy(self.evaluate(node.condition)):
+                        continue
+
+                # キーと値を評価
+                key = self.evaluate(node.key_expr)
+                value = self.evaluate(node.value_expr)
+
+                # キーは文字列または数値のみ許可
+                if isinstance(key, (str, int, float)):
+                    result_dict[key] = value
+                else:
+                    raise TypeError(f"Dictionary key must be string or number, got {type(key).__name__}")
+
             return result_dict
 
         elif isinstance(node, Identifier):
@@ -332,12 +382,31 @@ class Interpreter:
             self.current_env.set(node.name, value)
             return None
 
+        elif isinstance(node, MultipleAssignment):
+            # 複数代入の評価
+            value = self.evaluate(node.value)
+
+            # 値がリストまたはイテラブルであることを確認
+            if not isinstance(value, (list, str)):
+                raise TypeError("Cannot unpack non-iterable")
+
+            # 要素数のチェック
+            if len(value) != len(node.targets):
+                raise ValueError(f"Cannot unpack {len(value)} values into {len(node.targets)} variables")
+
+            # 各変数に値を代入
+            for target, val in zip(node.targets, value):
+                self.current_env.define(target, val)
+
+            return None
+
         elif isinstance(node, FunctionDeclaration):
             func = MMFunction(
                 node.name,
                 node.parameters,
                 node.body,
-                self.current_env
+                self.current_env,
+                node.variadic_param
             )
             self.current_env.define(node.name, func)
             return None
@@ -487,6 +556,28 @@ class Interpreter:
             else:
                 raise TypeError(f"Cannot index {type(obj).__name__}")
 
+        elif isinstance(node, SliceAccess):
+            obj = self.evaluate(node.object)
+
+            if not isinstance(obj, (list, str)):
+                raise TypeError("Slicing requires a list or string")
+
+            # スライスのstart, end, stepを評価
+            start = self.evaluate(node.start) if node.start else None
+            end = self.evaluate(node.end) if node.end else None
+            step = self.evaluate(node.step) if node.step else None
+
+            # 型チェック
+            if start is not None and not isinstance(start, int):
+                raise TypeError("Slice indices must be integers")
+            if end is not None and not isinstance(end, int):
+                raise TypeError("Slice indices must be integers")
+            if step is not None and not isinstance(step, int):
+                raise TypeError("Slice step must be an integer")
+
+            # Pythonのスライス機能を使用
+            return obj[start:end:step]
+
         elif isinstance(node, BreakStatement):
             raise BreakException()
 
@@ -558,6 +649,15 @@ class Interpreter:
 
             return None
 
+        elif isinstance(node, LambdaExpression):
+            # ラムダ式は無名関数として扱う
+            return MMFunction(
+                "<lambda>",
+                node.parameters,
+                [ReturnStatement(node.body)],  # 式を自動的にreturn文に変換
+                self.current_env
+            )
+
         else:
             raise NotImplementedError(f"Evaluation not implemented for {type(node).__name__}")
 
@@ -628,17 +728,37 @@ class Interpreter:
 
         # ユーザー定義関数
         elif isinstance(func, MMFunction):
-            if len(args) != len(func.parameters):
-                raise TypeError(
-                    f"{func.name}() takes {len(func.parameters)} arguments but {len(args)} were given"
-                )
+            # 可変長引数がある場合
+            if func.variadic_param:
+                # 通常のパラメータ数をチェック
+                if len(args) < len(func.parameters):
+                    raise TypeError(
+                        f"{func.name}() takes at least {len(func.parameters)} arguments but {len(args)} were given"
+                    )
 
-            # 新しい環境を作成(クロージャを親とする)
-            func_env = Environment(func.closure)
+                # 新しい環境を作成
+                func_env = Environment(func.closure)
 
-            # パラメータをバインド
-            for param, arg in zip(func.parameters, args):
-                func_env.define(param, arg)
+                # 通常のパラメータをバインド
+                for param, arg in zip(func.parameters, args):
+                    func_env.define(param, arg)
+
+                # 残りの引数を可変長引数としてバインド
+                remaining_args = args[len(func.parameters):]
+                func_env.define(func.variadic_param, remaining_args)
+            else:
+                # 可変長引数なし
+                if len(args) != len(func.parameters):
+                    raise TypeError(
+                        f"{func.name}() takes {len(func.parameters)} arguments but {len(args)} were given"
+                    )
+
+                # 新しい環境を作成
+                func_env = Environment(func.closure)
+
+                # パラメータをバインド
+                for param, arg in zip(func.parameters, args):
+                    func_env.define(param, arg)
 
             # 関数本体を実行
             prev_env = self.current_env

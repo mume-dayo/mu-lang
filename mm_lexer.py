@@ -23,6 +23,7 @@ class TokenType(Enum):
     # キーワード
     LET = auto()
     FUN = auto()
+    LAMBDA = auto()
     IF = auto()
     ELIF = auto()
     ELSE = auto()
@@ -104,6 +105,7 @@ class Lexer:
         self.keywords = {
             'let': TokenType.LET,
             'fun': TokenType.FUN,
+            'lambda': TokenType.LAMBDA,
             'if': TokenType.IF,
             'elif': TokenType.ELIF,
             'else': TokenType.ELSE,

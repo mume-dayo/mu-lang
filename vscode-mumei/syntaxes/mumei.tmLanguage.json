@@ -39,7 +39,7 @@
         },
         {
           "name": "keyword.declaration.mumei",
-          "match": "\\b(let|fun)\\b"
+          "match": "\\b(let|fun|lambda)\\b"
         },
         {
           "name": "keyword.operator.logical.mumei",

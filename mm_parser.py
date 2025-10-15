@@ -45,8 +45,25 @@ class ListLiteral(ASTNode):
 
 
 @dataclass
+class ListComprehension(ASTNode):
+    expression: ASTNode  # 各要素に適用する式
+    variable: str  # イテレーション変数
+    iterable: ASTNode  # 反復対象
+    condition: Optional[ASTNode] = None  # オプショナルなフィルター条件
+
+
+@dataclass
 class DictLiteral(ASTNode):
     pairs: List[tuple]  # [(key, value), ...]
+
+
+@dataclass
+class DictComprehension(ASTNode):
+    key_expr: ASTNode  # キーの式
+    value_expr: ASTNode  # 値の式
+    variable: str  # イテレーション変数
+    iterable: ASTNode  # 反復対象
+    condition: Optional[ASTNode] = None  # オプショナルなフィルター条件
 
 
 @dataclass
@@ -74,6 +91,12 @@ class Assignment(ASTNode):
 
 
 @dataclass
+class MultipleAssignment(ASTNode):
+    targets: List[str]  # 変数名のリスト
+    value: ASTNode  # 代入される値（リストまたはイテラブル）
+
+
+@dataclass
 class VariableDeclaration(ASTNode):
     name: str
     value: Optional[ASTNode]
@@ -91,6 +114,13 @@ class FunctionDeclaration(ASTNode):
     parameters: List[str]
     body: List[ASTNode]
     is_async: bool = False
+    variadic_param: Optional[str] = None  # *args のような可変長引数
+
+
+@dataclass
+class LambdaExpression(ASTNode):
+    parameters: List[str]
+    body: ASTNode  # ラムダは単一の式を返す
 
 
 @dataclass
@@ -189,6 +219,14 @@ class CasePattern(ASTNode):
 class IndexAccess(ASTNode):
     object: ASTNode
     index: ASTNode
+
+
+@dataclass
+class SliceAccess(ASTNode):
+    object: ASTNode
+    start: Optional[ASTNode]
+    end: Optional[ASTNode]
+    step: Optional[ASTNode]
 
 
 @dataclass
@@ -313,18 +351,32 @@ class Parser:
         elif token.type == TokenType.RBRACE:
             pass
 
-    def parse_variable_declaration(self) -> VariableDeclaration:
+    def parse_variable_declaration(self):
         self.expect(TokenType.LET)
-        name_token = self.expect(TokenType.IDENTIFIER)
-        name = name_token.value
 
+        # 最初の識別子を読む
+        first_name = self.expect(TokenType.IDENTIFIER).value
+
+        # カンマがあれば複数代入
+        if self.current_token().type == TokenType.COMMA:
+            targets = [first_name]
+            while self.current_token().type == TokenType.COMMA:
+                self.advance()
+                targets.append(self.expect(TokenType.IDENTIFIER).value)
+
+            self.expect(TokenType.ASSIGN)
+            value = self.parse_expression()
+            self.expect_statement_end()
+            return MultipleAssignment(targets, value)
+
+        # 通常の変数宣言
         value = None
         if self.current_token().type == TokenType.ASSIGN:
             self.advance()
             value = self.parse_expression()
 
         self.expect_statement_end()
-        return VariableDeclaration(name, value)
+        return VariableDeclaration(first_name, value)
 
     def parse_assignment(self) -> Assignment:
         name_token = self.expect(TokenType.IDENTIFIER)
@@ -340,21 +392,35 @@ class Parser:
 
         self.expect(TokenType.LPAREN)
         parameters = []
+        variadic_param = None
 
         if self.current_token().type != TokenType.RPAREN:
-            param_token = self.expect(TokenType.IDENTIFIER)
-            parameters.append(param_token.value)
-
-            while self.current_token().type == TokenType.COMMA:
+            # 最初のパラメータ
+            if self.current_token().type == TokenType.MULTIPLY:
+                # 可変長引数
                 self.advance()
+                variadic_param = self.expect(TokenType.IDENTIFIER).value
+            else:
                 param_token = self.expect(TokenType.IDENTIFIER)
                 parameters.append(param_token.value)
+
+            # 残りのパラメータ
+            while self.current_token().type == TokenType.COMMA:
+                self.advance()
+                if self.current_token().type == TokenType.MULTIPLY:
+                    # 可変長引数（最後のパラメータのみ）
+                    self.advance()
+                    variadic_param = self.expect(TokenType.IDENTIFIER).value
+                    break  # 可変長引数は最後
+                else:
+                    param_token = self.expect(TokenType.IDENTIFIER)
+                    parameters.append(param_token.value)
 
         self.expect(TokenType.RPAREN)
 
         body = self.parse_block()
 
-        return FunctionDeclaration(name, parameters, body)
+        return FunctionDeclaration(name, parameters, body, variadic_param=variadic_param)
 
     def parse_class_declaration(self) -> ClassDeclaration:
         self.expect(TokenType.CLASS)
@@ -628,11 +694,38 @@ class Parser:
                     raise SyntaxError("Invalid function call")
 
             elif self.current_token().type == TokenType.LBRACKET:
-                # インデックスアクセス
+                # インデックスアクセスまたはスライスアクセス
                 self.advance()
-                index = self.parse_expression()
-                self.expect(TokenType.RBRACKET)
-                expr = IndexAccess(expr, index)
+
+                # スライスかインデックスかを判断
+                start = None
+                end = None
+                step = None
+
+                # 最初の要素（start or index）
+                if self.current_token().type != TokenType.COLON:
+                    start = self.parse_expression()
+
+                # コロンがあればスライス
+                if self.current_token().type == TokenType.COLON:
+                    self.advance()
+
+                    # end
+                    if self.current_token().type not in (TokenType.COLON, TokenType.RBRACKET):
+                        end = self.parse_expression()
+
+                    # step
+                    if self.current_token().type == TokenType.COLON:
+                        self.advance()
+                        if self.current_token().type != TokenType.RBRACKET:
+                            step = self.parse_expression()
+
+                    self.expect(TokenType.RBRACKET)
+                    expr = SliceAccess(expr, start, end, step)
+                else:
+                    # 通常のインデックスアクセス
+                    self.expect(TokenType.RBRACKET)
+                    expr = IndexAccess(expr, start)
 
             elif self.current_token().type == TokenType.DOT:
                 # メンバーアクセス
@@ -687,44 +780,95 @@ class Parser:
         elif token.type == TokenType.NEW:
             return self.parse_new_expression()
 
+        elif token.type == TokenType.LAMBDA:
+            return self.parse_lambda_expression()
+
         else:
             raise SyntaxError(f"Unexpected token {token.type.name} at {token.line}:{token.column}")
 
-    def parse_list_literal(self) -> ListLiteral:
+    def parse_list_literal(self):
         self.expect(TokenType.LBRACKET)
-        elements = []
 
-        if self.current_token().type != TokenType.RBRACKET:
-            elements.append(self.parse_expression())
+        if self.current_token().type == TokenType.RBRACKET:
+            self.advance()
+            return ListLiteral([])
 
-            while self.current_token().type == TokenType.COMMA:
+        # 最初の式をパース
+        first_expr = self.parse_expression()
+
+        # リスト内包表記かどうかをチェック
+        if self.current_token().type == TokenType.FOR:
+            self.advance()
+            self.expect(TokenType.LPAREN)
+            var_token = self.expect(TokenType.IDENTIFIER)
+            self.expect(TokenType.IN)
+            iterable = self.parse_expression()
+            self.expect(TokenType.RPAREN)
+
+            # オプショナルなif条件
+            condition = None
+            if self.current_token().type == TokenType.IF:
                 self.advance()
-                if self.current_token().type == TokenType.RBRACKET:
-                    break
-                elements.append(self.parse_expression())
+                self.expect(TokenType.LPAREN)
+                condition = self.parse_expression()
+                self.expect(TokenType.RPAREN)
+
+            self.expect(TokenType.RBRACKET)
+            return ListComprehension(first_expr, var_token.value, iterable, condition)
+
+        # 通常のリストリテラル
+        elements = [first_expr]
+        while self.current_token().type == TokenType.COMMA:
+            self.advance()
+            if self.current_token().type == TokenType.RBRACKET:
+                break
+            elements.append(self.parse_expression())
 
         self.expect(TokenType.RBRACKET)
         return ListLiteral(elements)
 
-    def parse_dict_literal(self) -> DictLiteral:
+    def parse_dict_literal(self):
         self.expect(TokenType.LBRACE)
-        pairs = []
 
-        if self.current_token().type != TokenType.RBRACE:
-            # key: value のペアをパース
+        if self.current_token().type == TokenType.RBRACE:
+            self.advance()
+            return DictLiteral([])
+
+        # 最初のキーをパース
+        key = self.parse_expression()
+        self.expect(TokenType.COLON)
+        value = self.parse_expression()
+
+        # 辞書内包表記かどうかをチェック
+        if self.current_token().type == TokenType.FOR:
+            self.advance()
+            self.expect(TokenType.LPAREN)
+            var_token = self.expect(TokenType.IDENTIFIER)
+            self.expect(TokenType.IN)
+            iterable = self.parse_expression()
+            self.expect(TokenType.RPAREN)
+
+            # オプショナルなif条件
+            condition = None
+            if self.current_token().type == TokenType.IF:
+                self.advance()
+                self.expect(TokenType.LPAREN)
+                condition = self.parse_expression()
+                self.expect(TokenType.RPAREN)
+
+            self.expect(TokenType.RBRACE)
+            return DictComprehension(key, value, var_token.value, iterable, condition)
+
+        # 通常の辞書リテラル
+        pairs = [(key, value)]
+        while self.current_token().type == TokenType.COMMA:
+            self.advance()
+            if self.current_token().type == TokenType.RBRACE:
+                break
             key = self.parse_expression()
             self.expect(TokenType.COLON)
             value = self.parse_expression()
             pairs.append((key, value))
-
-            while self.current_token().type == TokenType.COMMA:
-                self.advance()
-                if self.current_token().type == TokenType.RBRACE:
-                    break
-                key = self.parse_expression()
-                self.expect(TokenType.COLON)
-                value = self.parse_expression()
-                pairs.append((key, value))
 
         self.expect(TokenType.RBRACE)
         return DictLiteral(pairs)
@@ -809,3 +953,27 @@ class Parser:
 
         self.expect(TokenType.RBRACE)
         return MatchStatement(expression, cases)
+
+    def parse_lambda_expression(self) -> LambdaExpression:
+        self.expect(TokenType.LAMBDA)
+        self.expect(TokenType.LPAREN)
+
+        # パラメータのパース
+        parameters = []
+        if self.current_token().type != TokenType.RPAREN:
+            param_token = self.expect(TokenType.IDENTIFIER)
+            parameters.append(param_token.value)
+
+            while self.current_token().type == TokenType.COMMA:
+                self.advance()
+                param_token = self.expect(TokenType.IDENTIFIER)
+                parameters.append(param_token.value)
+
+        self.expect(TokenType.RPAREN)
+        self.expect(TokenType.LBRACE)
+
+        # ラムダ本体は単一の式
+        body = self.parse_expression()
+
+        self.expect(TokenType.RBRACE)
+        return LambdaExpression(parameters, body)
