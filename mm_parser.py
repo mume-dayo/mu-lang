@@ -129,6 +129,11 @@ class ReturnStatement(ASTNode):
 
 
 @dataclass
+class YieldExpression(ASTNode):
+    value: Optional[ASTNode]
+
+
+@dataclass
 class AwaitExpression(ASTNode):
     expression: ASTNode
 
@@ -313,6 +318,8 @@ class Parser:
             return self.parse_for_statement()
         elif token.type == TokenType.RETURN:
             return self.parse_return_statement()
+        elif token.type == TokenType.YIELD:
+            return self.parse_yield_expression()
         elif token.type == TokenType.BREAK:
             return self.parse_break_statement()
         elif token.type == TokenType.CONTINUE:
@@ -464,6 +471,16 @@ class Parser:
 
         self.expect_statement_end()
         return ReturnStatement(value)
+
+    def parse_yield_expression(self) -> YieldExpression:
+        self.expect(TokenType.YIELD)
+
+        value = None
+        if self.current_token().type not in (TokenType.SEMICOLON, TokenType.NEWLINE, TokenType.RBRACE):
+            value = self.parse_expression()
+
+        self.expect_statement_end()
+        return YieldExpression(value)
 
     def parse_if_statement(self) -> IfStatement:
         self.expect(TokenType.IF)

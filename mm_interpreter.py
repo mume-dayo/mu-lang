@@ -56,6 +56,12 @@ class ReturnValue(Exception):
         self.value = value
 
 
+class YieldValue(Exception):
+    """yield文の実装用"""
+    def __init__(self, value):
+        self.value = value
+
+
 class BreakException(Exception):
     """break文の実装用"""
     pass
@@ -75,16 +81,94 @@ class MMException(Exception):
 
 class MMFunction:
     """ユーザー定義関数"""
-    def __init__(self, name: str, parameters: List[str], body: List[ASTNode], closure: Dict[str, Any], variadic_param: Optional[str] = None, is_async: bool = False):
+    def __init__(self, name: str, parameters: List[str], body: List[ASTNode], closure: Dict[str, Any], variadic_param: Optional[str] = None, is_async: bool = False, is_generator: bool = False):
         self.name = name
         self.parameters = parameters
         self.body = body
         self.closure = closure
         self.variadic_param = variadic_param  # 可変長引数名
         self.is_async = is_async  # 非同期関数かどうか
+        self.is_generator = is_generator  # ジェネレーターかどうか
 
     def __repr__(self):
+        if self.is_generator:
+            return f"<generator function {self.name}>"
         return f"<async function {self.name}>" if self.is_async else f"<function {self.name}>"
+
+
+class MMGenerator:
+    """ジェネレーターオブジェクト"""
+    def __init__(self, function: MMFunction, args: List[Any], interpreter):
+        self.function = function
+        self.args = args
+        self.interpreter = interpreter
+        self.values = []  # yieldされた値を保存
+        self.index = 0  # 現在のイテレーション位置
+        self.generated = False  # 値の生成が完了したか
+
+    def _generate_values(self):
+        """全ての値を事前に生成"""
+        if self.generated:
+            return
+
+        # 環境をセットアップ
+        env = Environment(parent=self.function.closure)
+
+        # 引数をバインド
+        for i, param in enumerate(self.function.parameters):
+            if i < len(self.args):
+                env.define(param, self.args[i])
+            else:
+                env.define(param, None)
+
+        # 可変長引数を処理
+        if self.function.variadic_param:
+            variadic_args = self.args[len(self.function.parameters):]
+            env.define(self.function.variadic_param, variadic_args)
+
+        # 関数本体を実行してyieldされた値を収集
+        old_env = self.interpreter.current_env
+        self.interpreter.current_env = env
+
+        # YieldValueCollectorをインストール
+        class YieldValueCollector:
+            def __init__(self, values_list):
+                self.values = values_list
+
+        collector = YieldValueCollector(self.values)
+        self.interpreter._yield_collector = collector
+
+        try:
+            self.interpreter.evaluate_block(self.function.body)
+        except ReturnValue:
+            # returnで終了
+            pass
+        finally:
+            # コレクターを削除
+            if hasattr(self.interpreter, '_yield_collector'):
+                delattr(self.interpreter, '_yield_collector')
+            self.interpreter.current_env = old_env
+            self.generated = True
+
+    def __iter__(self):
+        # 最初のイテレーション時に全ての値を生成
+        self._generate_values()
+        self.index = 0
+        return self
+
+    def __next__(self):
+        if not self.generated:
+            self._generate_values()
+
+        if self.index >= len(self.values):
+            raise StopIteration
+
+        value = self.values[self.index]
+        self.index += 1
+        return value
+
+    def __repr__(self):
+        return f"<generator {self.function.name}>"
 
 
 class MMClass:
@@ -165,6 +249,35 @@ class Interpreter:
 
         # 組み込み関数
         self.setup_builtins()
+
+    def has_yield(self, body: List[ASTNode]) -> bool:
+        """関数本体にyieldが含まれているかチェック"""
+        for stmt in body:
+            if isinstance(stmt, YieldExpression):
+                return True
+            # ネストした構造内もチェック
+            if isinstance(stmt, IfStatement):
+                if self.has_yield(stmt.then_block):
+                    return True
+                for _, elif_body in stmt.elif_branches:
+                    if self.has_yield(elif_body):
+                        return True
+                if stmt.else_block and self.has_yield(stmt.else_block):
+                    return True
+            elif isinstance(stmt, WhileStatement):
+                if self.has_yield(stmt.body):
+                    return True
+            elif isinstance(stmt, ForStatement):
+                if self.has_yield(stmt.body):
+                    return True
+            elif isinstance(stmt, TryStatement):
+                if self.has_yield(stmt.try_block):
+                    return True
+                if stmt.catch_block and self.has_yield(stmt.catch_block):
+                    return True
+                if stmt.finally_block and self.has_yield(stmt.finally_block):
+                    return True
+        return False
 
     def setup_builtins(self):
         """組み込み関数の設定"""
@@ -402,13 +515,17 @@ class Interpreter:
             return None
 
         elif isinstance(node, FunctionDeclaration):
+            # 関数本体にyieldが含まれているかチェック
+            is_generator = self.has_yield(node.body)
+
             func = MMFunction(
                 node.name,
                 node.parameters,
                 node.body,
                 self.current_env,
                 node.variadic_param,
-                node.is_async
+                node.is_async,
+                is_generator
             )
             self.current_env.define(node.name, func)
             return None
@@ -419,6 +536,15 @@ class Interpreter:
         elif isinstance(node, ReturnStatement):
             value = self.evaluate(node.value) if node.value else None
             raise ReturnValue(value)
+
+        elif isinstance(node, YieldExpression):
+            value = self.evaluate(node.value) if node.value else None
+            # ジェネレーターコンテキスト内であればコレクターに値を追加
+            if hasattr(self, '_yield_collector'):
+                self._yield_collector.values.append(value)
+                return None
+            else:
+                raise YieldValue(value)
 
         elif isinstance(node, IfStatement):
             condition = self.evaluate(node.condition)
@@ -448,8 +574,8 @@ class Interpreter:
 
         elif isinstance(node, ForStatement):
             iterable = self.evaluate(node.iterable)
-            if not isinstance(iterable, (list, str)):
-                raise TypeError("for loop requires an iterable (list or string)")
+            if not isinstance(iterable, (list, str, MMGenerator)):
+                raise TypeError("for loop requires an iterable (list, string, or generator)")
 
             result = None
             for item in iterable:
@@ -657,7 +783,10 @@ class Interpreter:
                 "<lambda>",
                 node.parameters,
                 [ReturnStatement(node.body)],  # 式を自動的にreturn文に変換
-                self.current_env
+                self.current_env,
+                None,  # variadic_param
+                False,  # is_async
+                False   # is_generator (ラムダは単一式なのでジェネレーターになれない)
             )
 
         elif isinstance(node, AwaitExpression):
@@ -776,6 +905,10 @@ class Interpreter:
                 # パラメータをバインド
                 for param, arg in zip(func.parameters, args):
                     func_env.define(param, arg)
+
+            # ジェネレーター関数の場合はMMGeneratorを返す
+            if func.is_generator:
+                return MMGenerator(func, args, self)
 
             # async関数の場合はAsyncTaskを返す
             if func.is_async:

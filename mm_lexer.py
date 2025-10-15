@@ -36,6 +36,7 @@ class TokenType(Enum):
     PASS = auto()
     ASYNC = auto()
     AWAIT = auto()
+    YIELD = auto()
     TRY = auto()
     CATCH = auto()
     FINALLY = auto()
@@ -118,6 +119,7 @@ class Lexer:
             'pass': TokenType.PASS,
             'async': TokenType.ASYNC,
             'await': TokenType.AWAIT,
+            'yield': TokenType.YIELD,
             'try': TokenType.TRY,
             'catch': TokenType.CATCH,
             'finally': TokenType.FINALLY,
