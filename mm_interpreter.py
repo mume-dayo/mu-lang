@@ -75,15 +75,16 @@ class MMException(Exception):
 
 class MMFunction:
     """ユーザー定義関数"""
-    def __init__(self, name: str, parameters: List[str], body: List[ASTNode], closure: Dict[str, Any], variadic_param: Optional[str] = None):
+    def __init__(self, name: str, parameters: List[str], body: List[ASTNode], closure: Dict[str, Any], variadic_param: Optional[str] = None, is_async: bool = False):
         self.name = name
         self.parameters = parameters
         self.body = body
         self.closure = closure
         self.variadic_param = variadic_param  # 可変長引数名
+        self.is_async = is_async  # 非同期関数かどうか
 
     def __repr__(self):
-        return f"<function {self.name}>"
+        return f"<async function {self.name}>" if self.is_async else f"<function {self.name}>"
 
 
 class MMClass:
@@ -406,7 +407,8 @@ class Interpreter:
                 node.parameters,
                 node.body,
                 self.current_env,
-                node.variadic_param
+                node.variadic_param,
+                node.is_async
             )
             self.current_env.define(node.name, func)
             return None
@@ -658,6 +660,21 @@ class Interpreter:
                 self.current_env
             )
 
+        elif isinstance(node, AwaitExpression):
+            # await式の評価
+            task = self.evaluate(node.expression)
+
+            # mm_asyncモジュールのAsyncTaskかチェック
+            try:
+                from mm_async import AsyncTask
+                if isinstance(task, AsyncTask):
+                    return task.wait()
+            except ImportError:
+                pass
+
+            # AsyncTaskでない場合はそのまま返す（通常の値）
+            return task
+
         else:
             raise NotImplementedError(f"Evaluation not implemented for {type(node).__name__}")
 
@@ -760,7 +777,31 @@ class Interpreter:
                 for param, arg in zip(func.parameters, args):
                     func_env.define(param, arg)
 
-            # 関数本体を実行
+            # async関数の場合はAsyncTaskを返す
+            if func.is_async:
+                try:
+                    from mm_async import AsyncTask
+
+                    # 非同期で実行する関数を定義
+                    def async_wrapper():
+                        prev_env = self.current_env
+                        self.current_env = func_env
+                        try:
+                            self.evaluate_block(func.body)
+                            return None
+                        except ReturnValue as ret:
+                            return ret.value
+                        finally:
+                            self.current_env = prev_env
+
+                    # AsyncTaskを作成して開始
+                    task = AsyncTask(async_wrapper)
+                    task.start()
+                    return task
+                except ImportError:
+                    raise RuntimeError("mm_async module is required for async functions")
+
+            # 通常の関数実行
             prev_env = self.current_env
             self.current_env = func_env
 

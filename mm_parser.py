@@ -299,6 +299,8 @@ class Parser:
 
         if token.type == TokenType.LET:
             return self.parse_variable_declaration()
+        elif token.type == TokenType.ASYNC:
+            return self.parse_function_declaration(is_async=True)
         elif token.type == TokenType.FUN:
             return self.parse_function_declaration()
         elif token.type == TokenType.CLASS:
@@ -385,7 +387,11 @@ class Parser:
         self.expect_statement_end()
         return Assignment(name_token.value, value)
 
-    def parse_function_declaration(self) -> FunctionDeclaration:
+    def parse_function_declaration(self, is_async: bool = False) -> FunctionDeclaration:
+        # asyncキーワードがある場合はスキップ
+        if is_async:
+            self.expect(TokenType.ASYNC)
+
         self.expect(TokenType.FUN)
         name_token = self.expect(TokenType.IDENTIFIER)
         name = name_token.value
@@ -420,7 +426,7 @@ class Parser:
 
         body = self.parse_block()
 
-        return FunctionDeclaration(name, parameters, body, variadic_param=variadic_param)
+        return FunctionDeclaration(name, parameters, body, is_async, variadic_param)
 
     def parse_class_declaration(self) -> ClassDeclaration:
         self.expect(TokenType.CLASS)
@@ -667,6 +673,11 @@ class Parser:
             self.advance()
             operand = self.parse_unary()
             return UnaryOp(op, operand)
+
+        elif self.current_token().type == TokenType.AWAIT:
+            self.advance()
+            expression = self.parse_unary()
+            return AwaitExpression(expression)
 
         return self.parse_postfix()
 
