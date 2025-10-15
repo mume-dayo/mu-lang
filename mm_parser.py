@@ -188,6 +188,12 @@ class PassStatement(ASTNode):
 
 
 @dataclass
+class ImportStatement(ASTNode):
+    module_path: str  # インポートするモジュールのパス
+    alias: Optional[str] = None  # asでエイリアスを指定
+
+
+@dataclass
 class TernaryExpression(ASTNode):
     condition: ASTNode
     true_expr: ASTNode
@@ -334,6 +340,8 @@ class Parser:
             return self.parse_with_statement()
         elif token.type == TokenType.MATCH:
             return self.parse_match_statement()
+        elif token.type == TokenType.IMPORT:
+            return self.parse_import_statement()
         elif token.type == TokenType.IDENTIFIER:
             # 代入か関数呼び出し
             if self.peek_token().type == TokenType.ASSIGN:
@@ -981,6 +989,30 @@ class Parser:
 
         self.expect(TokenType.RBRACE)
         return MatchStatement(expression, cases)
+
+    def parse_import_statement(self) -> ImportStatement:
+        self.expect(TokenType.IMPORT)
+
+        # モジュールパスを取得（文字列またはidentifier）
+        module_path_token = self.current_token()
+        if module_path_token.type == TokenType.STRING:
+            module_path = module_path_token.value
+            self.advance()
+        elif module_path_token.type == TokenType.IDENTIFIER:
+            module_path = module_path_token.value
+            self.advance()
+        else:
+            raise Exception(f"Expected module path (string or identifier), got {module_path_token.type}")
+
+        # as エイリアスのパース（オプション）
+        alias = None
+        if self.current_token().type == TokenType.AS:
+            self.advance()
+            alias_token = self.expect(TokenType.IDENTIFIER)
+            alias = alias_token.value
+
+        self.expect_statement_end()
+        return ImportStatement(module_path, alias)
 
     def parse_lambda_expression(self) -> LambdaExpression:
         self.expect(TokenType.LAMBDA)

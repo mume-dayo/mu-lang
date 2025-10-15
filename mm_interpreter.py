@@ -246,6 +246,7 @@ class Interpreter:
     def __init__(self):
         self.global_env = Environment()
         self.current_env = self.global_env
+        self.module_cache = {}  # モジュールキャッシュ
 
         # 組み込み関数
         self.setup_builtins()
@@ -665,6 +666,9 @@ class Interpreter:
                 if node.member in obj:
                     return obj[node.member]
                 raise KeyError(f"Key '{node.member}' not found in dictionary")
+            elif hasattr(obj, 'env'):
+                # Moduleオブジェクト
+                return obj.env.get(node.member)
             else:
                 raise AttributeError(f"'{type(obj).__name__}' object has no attribute '{node.member}'")
 
@@ -714,6 +718,9 @@ class Interpreter:
 
         elif isinstance(node, PassStatement):
             return None
+
+        elif isinstance(node, ImportStatement):
+            return self.evaluate_import(node)
 
         elif isinstance(node, TernaryExpression):
             condition = self.evaluate(node.condition)
@@ -1007,6 +1014,69 @@ class Interpreter:
                 self.evaluate_block(node.finally_block)
 
         return result
+
+    def evaluate_import(self, node: ImportStatement):
+        """importステートメントの評価"""
+        module_path = node.module_path
+
+        # .muファイルとして扱う
+        if not module_path.endswith('.mu'):
+            module_path += '.mu'
+
+        # モジュールがキャッシュされているかチェック
+        if module_path in self.module_cache:
+            module_env = self.module_cache[module_path]
+        else:
+            # モジュールファイルを読み込み
+            try:
+                with open(module_path, 'r', encoding='utf-8') as f:
+                    module_source = f.read()
+            except FileNotFoundError:
+                raise Exception(f"Module '{module_path}' not found")
+
+            # モジュール用の新しい環境を作成
+            module_env = Environment(parent=self.global_env)
+
+            # モジュールを実行
+            from mm_lexer import Lexer
+            from mm_parser import Parser
+
+            lexer = Lexer(module_source)
+            tokens = lexer.tokenize()
+
+            parser = Parser(tokens)
+            ast = parser.parse()
+
+            # 現在の環境を保存
+            old_env = self.current_env
+            self.current_env = module_env
+
+            try:
+                self.evaluate(ast)
+            finally:
+                self.current_env = old_env
+
+            # モジュールをキャッシュ
+            self.module_cache[module_path] = module_env
+
+        # モジュールの内容を現在の環境にインポート
+        module_name = node.alias if node.alias else module_path.replace('.mu', '').replace('/', '_').replace('.', '_')
+
+        # モジュールオブジェクトを作成（モジュールの変数にアクセスできるオブジェクト）
+        class Module:
+            def __init__(self, env):
+                self.env = env
+
+            def __getattribute__(self, name):
+                if name == 'env':
+                    return object.__getattribute__(self, 'env')
+                env = object.__getattribute__(self, 'env')
+                return env.get(name)
+
+        module_obj = Module(module_env)
+        self.current_env.define(module_name, module_obj)
+
+        return None
 
     def run(self, source: str):
         """ソースコードを実行"""

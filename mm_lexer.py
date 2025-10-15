@@ -47,6 +47,8 @@ class TokenType(Enum):
     AS = auto()
     MATCH = auto()
     CASE = auto()
+    IMPORT = auto()
+    FROM = auto()
 
     # 演算子
     PLUS = auto()
@@ -130,6 +132,8 @@ class Lexer:
             'as': TokenType.AS,
             'match': TokenType.MATCH,
             'case': TokenType.CASE,
+            'import': TokenType.IMPORT,
+            'from': TokenType.FROM,
             'true': TokenType.TRUE,
             'false': TokenType.FALSE,
             'none': TokenType.NONE,
