@@ -290,7 +290,7 @@ class Interpreter:
             return input(prompt)
 
         def builtin_len(obj):
-            if isinstance(obj, (list, str)):
+            if isinstance(obj, (list, str, set)):
                 return len(obj)
             else:
                 raise TypeError(f"len() not supported for {type(obj).__name__}")
@@ -303,6 +303,7 @@ class Interpreter:
                 bool: "bool",
                 list: "list",
                 dict: "dict",
+                set: "set",
                 type(None): "none",
                 MMFunction: "function",
                 MMClass: "class",
@@ -353,6 +354,64 @@ class Interpreter:
             """全ての環境変数をリストで取得"""
             return list(os.environ.keys())
 
+        # set関連の関数
+        def builtin_set(iterable=None):
+            """セットを作成"""
+            if iterable is None:
+                return set()
+            return set(iterable)
+
+        def builtin_set_add(s, item):
+            """セットに要素を追加"""
+            if not isinstance(s, set):
+                raise TypeError("set_add() requires a set")
+            s.add(item)
+            return None
+
+        def builtin_set_remove(s, item):
+            """セットから要素を削除"""
+            if not isinstance(s, set):
+                raise TypeError("set_remove() requires a set")
+            s.remove(item)
+            return None
+
+        def builtin_set_discard(s, item):
+            """セットから要素を削除（存在しなくてもエラーにならない）"""
+            if not isinstance(s, set):
+                raise TypeError("set_discard() requires a set")
+            s.discard(item)
+            return None
+
+        def builtin_set_has(s, item):
+            """セットに要素が含まれているかチェック"""
+            if not isinstance(s, set):
+                raise TypeError("set_has() requires a set")
+            return item in s
+
+        def builtin_set_union(s1, s2):
+            """2つのセットの和集合"""
+            if not isinstance(s1, set) or not isinstance(s2, set):
+                raise TypeError("set_union() requires two sets")
+            return s1 | s2
+
+        def builtin_set_intersection(s1, s2):
+            """2つのセットの積集合"""
+            if not isinstance(s1, set) or not isinstance(s2, set):
+                raise TypeError("set_intersection() requires two sets")
+            return s1 & s2
+
+        def builtin_set_difference(s1, s2):
+            """2つのセットの差集合"""
+            if not isinstance(s1, set) or not isinstance(s2, set):
+                raise TypeError("set_difference() requires two sets")
+            return s1 - s2
+
+        def builtin_set_to_list(s):
+            """セットをリストに変換"""
+            if not isinstance(s, set):
+                raise TypeError("set_to_list() requires a set")
+            return list(s)
+
         self.global_env.define('print', builtin_print)
         self.global_env.define('input', builtin_input)
         self.global_env.define('len', builtin_len)
@@ -369,6 +428,17 @@ class Interpreter:
         self.global_env.define('env_set', builtin_env_set)
         self.global_env.define('env_has', builtin_env_has)
         self.global_env.define('env_list', builtin_env_list)
+
+        # set（集合）関連
+        self.global_env.define('set', builtin_set)
+        self.global_env.define('set_add', builtin_set_add)
+        self.global_env.define('set_remove', builtin_set_remove)
+        self.global_env.define('set_discard', builtin_set_discard)
+        self.global_env.define('set_has', builtin_set_has)
+        self.global_env.define('set_union', builtin_set_union)
+        self.global_env.define('set_intersection', builtin_set_intersection)
+        self.global_env.define('set_difference', builtin_set_difference)
+        self.global_env.define('set_to_list', builtin_set_to_list)
 
         # Discord機能を追加（利用可能な場合）
         if DISCORD_AVAILABLE:
@@ -575,8 +645,8 @@ class Interpreter:
 
         elif isinstance(node, ForStatement):
             iterable = self.evaluate(node.iterable)
-            if not isinstance(iterable, (list, str, MMGenerator)):
-                raise TypeError("for loop requires an iterable (list, string, or generator)")
+            if not isinstance(iterable, (list, str, set, MMGenerator)):
+                raise TypeError("for loop requires an iterable (list, string, set, or generator)")
 
             result = None
             for item in iterable:
