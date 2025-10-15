@@ -129,7 +129,7 @@ class FunctionDeclaration(ASTNode):
     body: List[ASTNode]
     is_async: bool = False
     variadic_param: Optional[str] = None  # *args のような可変長引数
-    decorators: List[str] = None  # デコレーター名のリスト
+    decorators: List = None  # デコレーター（名前のリストまたは関数呼び出しのリスト）
     param_types: Dict[str, str] = None  # パラメータの型アノテーション
     return_type: Optional[str] = None  # 戻り値の型アノテーション
 
@@ -475,7 +475,23 @@ class Parser:
         while self.current_token().type == TokenType.AT:
             self.advance()  # @をスキップ
             decorator_name = self.expect(TokenType.IDENTIFIER).value
-            decorators.append(decorator_name)
+
+            # 引数付きデコレーターをチェック: @decorator(args)
+            if self.current_token().type == TokenType.LPAREN:
+                self.advance()  # (
+                arguments = []
+                if self.current_token().type != TokenType.RPAREN:
+                    arguments.append(self.parse_expression())
+                    while self.current_token().type == TokenType.COMMA:
+                        self.advance()
+                        arguments.append(self.parse_expression())
+                self.expect(TokenType.RPAREN)
+                # デコレーターを関数呼び出しとして保存
+                decorators.append(('call', decorator_name, arguments))
+            else:
+                # 通常のデコレーター（引数なし）
+                decorators.append(('name', decorator_name))
+
             self.skip_newlines()
 
         # async funまたはfun

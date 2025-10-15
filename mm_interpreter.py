@@ -6,6 +6,7 @@ ASTを実行するインタプリタ
 import os
 from typing import Any, Dict, List, Optional
 from mm_parser import *
+from mm_typechecker import global_type_checker
 
 # Discord機能をインポート（オプショナル）
 try:
@@ -310,27 +311,34 @@ class MMInstance:
         self.fields = {}  # インスタンス変数
 
     def get(self, name: str):
-        # まずインスタンス変数を確認
-        if name in self.fields:
-            return self.fields[name]
-        # 次にメソッドを確認
+        # まずインスタンス変数を確認（プロパティが存在する場合はスキップ）
         if name in self.mm_class.methods:
             method = self.mm_class.methods[name]
-            # プロパティの場合は自動的に呼び出す
+            # プロパティの場合は値を返す（getterは呼び出さない - 後でインタープリタで処理）
             if isinstance(method, MMFunction) and method.is_property:
-                # selfをバインドして実行
-                from mm_interpreter import Interpreter
-                # プロパティgetterを呼び出し
-                # （インタープリターインスタンスが必要だが、ここでは簡易的に処理）
                 return method
             return method
+
+        # インスタンス変数を確認
+        if name in self.fields:
+            return self.fields[name]
+
         # 親クラスを確認
         if self.mm_class.parent:
             if name in self.mm_class.parent.methods:
                 return self.mm_class.parent.methods[name]
         raise AttributeError(f"'{self.mm_class.name}' object has no attribute '{name}'")
 
-    def set(self, name: str, value: Any):
+    def set(self, name: str, value: Any, interpreter=None):
+        # プロパティのsetterがある場合はそれを呼ぶ
+        if name in self.mm_class.methods:
+            method = self.mm_class.methods[name]
+            if isinstance(method, MMFunction) and method.is_property and method.setter:
+                # setterを呼び出す
+                if interpreter:
+                    interpreter.call_mm_function(method.setter, [value], self)
+                    return
+        # 通常のフィールド代入
         self.fields[name] = value
 
     def __repr__(self):
@@ -570,11 +578,13 @@ class Interpreter:
             """プロパティデコレーター"""
             if isinstance(func, MMFunction):
                 func.is_property = True
-            return func
-
-        def builtin_setter(func):
-            """セッターデコレーター（未実装 - プレースホルダー）"""
-            # 実際のsetter実装は将来的に追加可能
+                # setterメソッドを追加する機能を提供
+                def setter_decorator(setter_func):
+                    if isinstance(setter_func, MMFunction):
+                        func.setter = setter_func
+                    return func
+                # プロパティオブジェクトにsetterメソッドを追加
+                func.setter_decorator = setter_decorator
             return func
 
         self.global_env.define('print', builtin_print)
@@ -607,7 +617,6 @@ class Interpreter:
 
         # プロパティ関連
         self.global_env.define('property', builtin_property)
-        self.global_env.define('setter', builtin_setter)
 
         # Discord機能を追加（利用可能な場合）
         if DISCORD_AVAILABLE:
@@ -740,7 +749,7 @@ class Interpreter:
             obj = self.evaluate(node.object)
             value = self.evaluate(node.value)
             if isinstance(obj, MMInstance):
-                obj.set(node.member, value)
+                obj.set(node.member, value, self)
             else:
                 raise TypeError(f"Cannot set member on {type(obj).__name__}")
             return None
@@ -777,19 +786,61 @@ class Interpreter:
                 is_generator
             )
 
+            # 型アノテーションを保存
+            if node.param_types:
+                func.param_types = node.param_types
+            if node.return_type:
+                func.return_type = node.return_type
+
             # デコレーターを適用
             if node.decorators:
-                for decorator_name in reversed(node.decorators):  # 下から順に適用
-                    decorator = self.current_env.get(decorator_name)
-                    # MMFunctionとPython関数の両方をサポート
-                    if isinstance(decorator, MMFunction):
-                        # MMFunction（ユーザー定義デコレーター）を適用
-                        func = self.call_mm_function(decorator, [func])
-                    elif callable(decorator):
-                        # Python組み込みデコレーターを適用
-                        func = decorator(func)
+                for decorator_spec in reversed(node.decorators):  # 下から順に適用
+                    if isinstance(decorator_spec, tuple):
+                        dec_type = decorator_spec[0]
+                        if dec_type == 'name':
+                            # 通常のデコレーター
+                            decorator_name = decorator_spec[1]
+                            decorator = self.current_env.get(decorator_name)
+                            if isinstance(decorator, MMFunction):
+                                func = self.call_mm_function(decorator, [func])
+                            elif callable(decorator):
+                                func = decorator(func)
+                            else:
+                                raise TypeError(f"'{decorator_name}' is not a decorator (not callable)")
+                        elif dec_type == 'call':
+                            # 引数付きデコレーター @decorator(args)
+                            decorator_name = decorator_spec[1]
+                            decorator_args_nodes = decorator_spec[2]
+                            # 引数を評価
+                            decorator_args = [self.evaluate(arg) for arg in decorator_args_nodes]
+
+                            decorator = self.current_env.get(decorator_name)
+                            if isinstance(decorator, MMFunction):
+                                # デコレーターファクトリーを呼び出して実際のデコレーターを取得
+                                actual_decorator = self.call_mm_function(decorator, decorator_args)
+                                # 実際のデコレーターを適用
+                                if isinstance(actual_decorator, MMFunction):
+                                    func = self.call_mm_function(actual_decorator, [func])
+                                elif callable(actual_decorator):
+                                    func = actual_decorator(func)
+                                else:
+                                    raise TypeError(f"Decorator factory '{decorator_name}' did not return a callable")
+                            elif callable(decorator):
+                                # Python組み込みデコレーターファクトリー
+                                actual_decorator = decorator(*decorator_args)
+                                func = actual_decorator(func)
+                            else:
+                                raise TypeError(f"'{decorator_name}' is not a decorator (not callable)")
                     else:
-                        raise TypeError(f"'{decorator_name}' is not a decorator (not callable)")
+                        # 後方互換性のため、文字列の場合も処理
+                        decorator_name = decorator_spec
+                        decorator = self.current_env.get(decorator_name)
+                        if isinstance(decorator, MMFunction):
+                            func = self.call_mm_function(decorator, [func])
+                        elif callable(decorator):
+                            func = decorator(func)
+                        else:
+                            raise TypeError(f"'{decorator_name}' is not a decorator (not callable)")
 
             self.current_env.define(node.name, func)
             return None
@@ -819,7 +870,11 @@ class Interpreter:
             elif isinstance(obj, MMInstance):
                 method = obj.get(node.member)
                 if isinstance(method, MMFunction):
-                    return self.call_mm_function(method, args, obj)
+                    # プロパティの場合は引数なしで呼ぶ
+                    if method.is_property:
+                        return self.call_mm_function(method, [], obj)
+                    else:
+                        return self.call_mm_function(method, args, obj)
                 else:
                     raise TypeError(f"'{node.member}' is not a method")
 
@@ -953,7 +1008,18 @@ class Interpreter:
             obj = self.evaluate(node.object)
 
             if isinstance(obj, MMInstance):
-                return obj.get(node.member)
+                # まずメソッドを確認
+                if node.member in obj.mm_class.methods:
+                    method = obj.mm_class.methods[node.member]
+                    # プロパティの場合は自動的にgetterを呼び出す
+                    if isinstance(method, MMFunction) and method.is_property:
+                        return self.call_mm_function(method, [], obj)
+                    return method
+                # 次にフィールドを確認
+                elif node.member in obj.fields:
+                    return obj.fields[node.member]
+                else:
+                    raise AttributeError(f"'{obj.mm_class.name}' object has no attribute '{node.member}'")
             elif isinstance(obj, MMEnum):
                 # Enumの値アクセス
                 if node.member in obj.values:
@@ -1178,6 +1244,13 @@ class Interpreter:
 
     def call_mm_function(self, func: MMFunction, args: List[Any], instance=None) -> Any:
         """MMFunction呼び出しの共通処理"""
+
+        # 型チェック（オプショナル - 型アノテーションがある場合のみ）
+        if hasattr(func, 'param_types') and func.param_types:
+            type_error = global_type_checker.check_function_call(func, args, func.param_types)
+            if type_error:
+                print(f"Type warning: {type_error}")  # 警告のみで実行は続行
+
         # 可変長引数がある場合
         if func.variadic_param:
             # 通常のパラメータ数をチェック
@@ -1198,21 +1271,29 @@ class Interpreter:
             func_env.define(func.variadic_param, remaining_args)
         else:
             # 可変長引数なし
-            if len(args) != len(func.parameters):
+            # インスタンスメソッドの場合、selfを除いた引数数をチェック
+            expected_args = len(func.parameters)
+            if instance and expected_args > 0:
+                expected_args -= 1  # selfを除く
+
+            if len(args) != expected_args:
                 raise TypeError(
-                    f"{func.name}() takes {len(func.parameters)} arguments but {len(args)} were given"
+                    f"{func.name}() takes {expected_args} arguments but {len(args)} were given"
                 )
 
             # 新しい環境を作成
             func_env = Environment(func.closure)
 
-            # パラメータをバインド
-            for param, arg in zip(func.parameters, args):
-                func_env.define(param, arg)
-
-        # インスタンスメソッドの場合はselfをバインド
-        if instance:
-            func_env.define('self', instance)
+            # インスタンスメソッドの場合はselfを最初にバインド
+            if instance:
+                func_env.define('self', instance)
+                # 残りのパラメータをバインド
+                for param, arg in zip(func.parameters[1:], args):
+                    func_env.define(param, arg)
+            else:
+                # パラメータをバインド
+                for param, arg in zip(func.parameters, args):
+                    func_env.define(param, arg)
 
         # ジェネレーター関数の場合はMMGeneratorを返す
         if func.is_generator:
@@ -1253,6 +1334,12 @@ class Interpreter:
             result = ret.value
         finally:
             self.current_env = prev_env
+
+        # 戻り値の型チェック
+        if hasattr(func, 'return_type') and func.return_type and result is not None:
+            type_error = global_type_checker.check_return_value(result, func.return_type)
+            if type_error:
+                print(f"Type warning: {type_error}")  # 警告のみ
 
         return result
 
