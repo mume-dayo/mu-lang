@@ -455,15 +455,31 @@ discord_run("YOUR_BOT_TOKEN");
 
 ### 利用可能な関数
 
+**基本機能:**
 - `discord_create_bot(prefix)` - Botインスタンスを作成
 - `discord_command(name, callback)` - コマンドを登録
 - `discord_on_event(event, callback)` - イベントハンドラを登録
 - `discord_run(token)` - Botを起動
 
+**Embed（リッチメッセージ）:**
+- `discord_create_embed(title, description, color)` - Embedを作成
+- `discord_embed_add_field(embed, name, value, inline)` - フィールドを追加
+- `discord_embed_set_footer(embed, text, icon_url)` - フッターを設定
+- `discord_embed_set_author(embed, name, icon_url)` - 作者情報を設定
+
+**インタラクション（ボタン・セレクトメニュー）:**
+- `discord_create_button(label, custom_id, style, emoji, disabled)` - ボタンを作成
+- `discord_create_select(custom_id, options, placeholder, min_values, max_values)` - セレクトメニューを作成
+- `discord_create_view(components)` - Viewを作成（ボタンやセレクトメニューを含む）
+- `discord_on_interaction(custom_id, callback)` - インタラクションのコールバックを登録
+- `discord_command_with_view(name, callback)` - Viewを返すコマンドを登録
+
 ### サンプル
 
 - `examples/discord_bot_simple.mu` - シンプルなBot
 - `examples/discord_bot_advanced.mu` - 高度な機能を持つBot
+- `examples/discord_bot_advanced_features.mu` - Embed、データ永続化、モデレーション機能
+- `examples/discord_bot_interactions.mu` - ボタン、セレクトメニュー、インタラクション機能
 - `examples/discord_bot_api.mu` - HTTPリクエストを使ったAPI連携Bot
 
 詳細は [DISCORD_BOT.md](DISCORD_BOT.md) を参照してください。
@@ -498,16 +514,25 @@ mumei-language/
     ├── list_operations.mu
     ├── prime_numbers.mu
     ├── env_demo.mu
-    ├── http_demo.mu               # HTTP機能デモ
-    ├── exception_demo.mu          # 例外処理デモ
-    ├── dict_demo.mu               # 辞書型デモ
-    ├── class_demo.mu              # クラス/OOPデモ
-    ├── file_io_demo.mu            # ファイルI/Oデモ
-    ├── stdlib_demo.mu             # 標準ライブラリデモ
-    ├── discord_bot_simple.mu
-    ├── discord_bot_advanced.mu
-    ├── discord_bot_api.mu         # API連携Bot
-    └── discord_bot_safe_api.mu    # 例外処理付きBot
+    ├── http_demo.mu                      # HTTP機能デモ
+    ├── exception_demo.mu                 # 例外処理デモ
+    ├── dict_demo.mu                      # 辞書型デモ
+    ├── class_demo.mu                     # クラス/OOPデモ
+    ├── file_io_demo.mu                   # ファイルI/Oデモ
+    ├── stdlib_demo.mu                    # 標準ライブラリデモ
+    ├── lambda_example.mu                 # ラムダ式デモ
+    ├── list_comprehension_example.mu     # リスト内包表記デモ
+    ├── slice_example.mu                  # スライス記法デモ
+    ├── multiple_assignment_example.mu    # 複数代入デモ
+    ├── variadic_args_example.mu          # 可変長引数デモ
+    ├── dict_comprehension_example.mu     # 辞書内包表記デモ
+    ├── async_await_example.mu            # 非同期処理デモ
+    ├── discord_bot_simple.mu             # シンプルなBot
+    ├── discord_bot_advanced.mu           # 高度な機能Bot
+    ├── discord_bot_advanced_features.mu  # Embed・永続化・モデレーション
+    ├── discord_bot_interactions.mu       # ボタン・セレクトメニュー
+    ├── discord_bot_api.mu                # API連携Bot
+    └── discord_bot_safe_api.mu           # 例外処理付きBot
 ```
 
 ## アーキテクチャ
