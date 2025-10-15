@@ -4,7 +4,7 @@ MM Language Parser
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 from mm_lexer import Token, TokenType, Lexer
 
 
@@ -91,6 +91,13 @@ class Assignment(ASTNode):
 
 
 @dataclass
+class MemberAssignment(ASTNode):
+    object: ASTNode
+    member: str
+    value: ASTNode
+
+
+@dataclass
 class MultipleAssignment(ASTNode):
     targets: List[str]  # 変数名のリスト
     value: ASTNode  # 代入される値（リストまたはイテラブル）
@@ -122,6 +129,9 @@ class FunctionDeclaration(ASTNode):
     body: List[ASTNode]
     is_async: bool = False
     variadic_param: Optional[str] = None  # *args のような可変長引数
+    decorators: List[str] = None  # デコレーター名のリスト
+    param_types: Dict[str, str] = None  # パラメータの型アノテーション
+    return_type: Optional[str] = None  # 戻り値の型アノテーション
 
 
 @dataclass
@@ -266,6 +276,18 @@ class NewExpression(ASTNode):
     arguments: List[ASTNode]
 
 
+@dataclass
+class AssertStatement(ASTNode):
+    condition: ASTNode
+    message: Optional[ASTNode] = None
+
+
+@dataclass
+class EnumDeclaration(ASTNode):
+    name: str
+    values: List[str]  # 列挙値のリスト
+
+
 class Parser:
     def __init__(self, tokens: List[Token]):
         self.tokens = tokens
@@ -315,7 +337,10 @@ class Parser:
         self.skip_newlines()
         token = self.current_token()
 
-        if token.type == TokenType.LET:
+        if token.type == TokenType.AT:
+            # デコレーター
+            return self.parse_decorated_function()
+        elif token.type == TokenType.LET:
             return self.parse_variable_declaration()
         elif token.type == TokenType.ASYNC:
             return self.parse_function_declaration(is_async=True)
@@ -323,6 +348,8 @@ class Parser:
             return self.parse_function_declaration()
         elif token.type == TokenType.CLASS:
             return self.parse_class_declaration()
+        elif token.type == TokenType.ENUM:
+            return self.parse_enum_declaration()
         elif token.type == TokenType.IF:
             return self.parse_if_statement()
         elif token.type == TokenType.WHILE:
@@ -349,10 +376,28 @@ class Parser:
             return self.parse_match_statement()
         elif token.type == TokenType.IMPORT:
             return self.parse_import_statement()
+        elif token.type == TokenType.ASSERT:
+            return self.parse_assert_statement()
         elif token.type == TokenType.IDENTIFIER:
             # 代入か関数呼び出し
+            # self.field = value のような代入もサポート
             if self.peek_token().type == TokenType.ASSIGN:
                 return self.parse_assignment()
+            elif self.peek_token().type == TokenType.DOT:
+                # メンバーアクセス後の代入をチェック
+                saved_pos = self.pos
+                self.advance()  # IDENTIFIER
+                self.advance()  # DOT
+                if self.current_token().type == TokenType.IDENTIFIER and self.peek_token().type == TokenType.ASSIGN:
+                    # メンバーへの代入
+                    self.pos = saved_pos  # 位置を戻す
+                    return self.parse_member_assignment()
+                else:
+                    # 通常の式
+                    self.pos = saved_pos
+                    expr = self.parse_expression()
+                    self.expect_statement_end()
+                    return expr
             else:
                 expr = self.parse_expression()
                 self.expect_statement_end()
@@ -409,6 +454,95 @@ class Parser:
         self.expect_statement_end()
         return Assignment(name_token.value, value)
 
+    def parse_member_assignment(self):
+        """obj.member = value のようなメンバーへの代入をパース"""
+        # オブジェクトをパース
+        obj_token = self.expect(TokenType.IDENTIFIER)
+        obj = Identifier(obj_token.value)
+        self.expect(TokenType.DOT)
+        member_token = self.expect(TokenType.IDENTIFIER)
+        member = member_token.value
+        self.expect(TokenType.ASSIGN)
+        value = self.parse_expression()
+        self.expect_statement_end()
+        return MemberAssignment(obj, member, value)
+
+    def parse_decorated_function(self) -> FunctionDeclaration:
+        """デコレーター付き関数のパース"""
+        decorators = []
+
+        # デコレーターを収集
+        while self.current_token().type == TokenType.AT:
+            self.advance()  # @をスキップ
+            decorator_name = self.expect(TokenType.IDENTIFIER).value
+            decorators.append(decorator_name)
+            self.skip_newlines()
+
+        # async funまたはfun
+        is_async = False
+        if self.current_token().type == TokenType.ASYNC:
+            is_async = True
+            self.advance()
+
+        self.expect(TokenType.FUN)
+        name_token = self.expect(TokenType.IDENTIFIER)
+        name = name_token.value
+
+        self.expect(TokenType.LPAREN)
+        parameters = []
+        param_types = {}
+        variadic_param = None
+
+        if self.current_token().type != TokenType.RPAREN:
+            # パラメータのパース（型アノテーション対応）
+            if self.current_token().type == TokenType.MULTIPLY:
+                self.advance()
+                variadic_param = self.expect(TokenType.IDENTIFIER).value
+            else:
+                param_token = self.expect(TokenType.IDENTIFIER)
+                param_name = param_token.value
+                parameters.append(param_name)
+
+                # 型アノテーションをチェック
+                if self.current_token().type == TokenType.COLON:
+                    self.advance()
+                    type_token = self.expect(TokenType.IDENTIFIER)
+                    param_types[param_name] = type_token.value
+
+            while self.current_token().type == TokenType.COMMA:
+                self.advance()
+                if self.current_token().type == TokenType.MULTIPLY:
+                    self.advance()
+                    variadic_param = self.expect(TokenType.IDENTIFIER).value
+                    break
+                else:
+                    param_token = self.expect(TokenType.IDENTIFIER)
+                    param_name = param_token.value
+                    parameters.append(param_name)
+
+                    # 型アノテーションをチェック
+                    if self.current_token().type == TokenType.COLON:
+                        self.advance()
+                        type_token = self.expect(TokenType.IDENTIFIER)
+                        param_types[param_name] = type_token.value
+
+        self.expect(TokenType.RPAREN)
+
+        # 戻り値の型アノテーション
+        return_type = None
+        if self.current_token().type == TokenType.MINUS:
+            next_tok = self.peek_token()
+            if next_tok.type == TokenType.GT:
+                # ->
+                self.advance()  # -
+                self.advance()  # >
+                return_type_token = self.expect(TokenType.IDENTIFIER)
+                return_type = return_type_token.value
+
+        body = self.parse_block()
+
+        return FunctionDeclaration(name, parameters, body, is_async, variadic_param, decorators, param_types, return_type)
+
     def parse_function_declaration(self, is_async: bool = False) -> FunctionDeclaration:
         # asyncキーワードがある場合はスキップ
         if is_async:
@@ -420,6 +554,7 @@ class Parser:
 
         self.expect(TokenType.LPAREN)
         parameters = []
+        param_types = {}
         variadic_param = None
 
         if self.current_token().type != TokenType.RPAREN:
@@ -430,7 +565,14 @@ class Parser:
                 variadic_param = self.expect(TokenType.IDENTIFIER).value
             else:
                 param_token = self.expect(TokenType.IDENTIFIER)
-                parameters.append(param_token.value)
+                param_name = param_token.value
+                parameters.append(param_name)
+
+                # 型アノテーション
+                if self.current_token().type == TokenType.COLON:
+                    self.advance()
+                    type_token = self.expect(TokenType.IDENTIFIER)
+                    param_types[param_name] = type_token.value
 
             # 残りのパラメータ
             while self.current_token().type == TokenType.COMMA:
@@ -442,13 +584,31 @@ class Parser:
                     break  # 可変長引数は最後
                 else:
                     param_token = self.expect(TokenType.IDENTIFIER)
-                    parameters.append(param_token.value)
+                    param_name = param_token.value
+                    parameters.append(param_name)
+
+                    # 型アノテーション
+                    if self.current_token().type == TokenType.COLON:
+                        self.advance()
+                        type_token = self.expect(TokenType.IDENTIFIER)
+                        param_types[param_name] = type_token.value
 
         self.expect(TokenType.RPAREN)
 
+        # 戻り値の型アノテーション
+        return_type = None
+        if self.current_token().type == TokenType.MINUS:
+            next_tok = self.peek_token()
+            if next_tok.type == TokenType.GT:
+                # ->
+                self.advance()  # -
+                self.advance()  # >
+                return_type_token = self.expect(TokenType.IDENTIFIER)
+                return_type = return_type_token.value
+
         body = self.parse_block()
 
-        return FunctionDeclaration(name, parameters, body, is_async, variadic_param)
+        return FunctionDeclaration(name, parameters, body, is_async, variadic_param, None, param_types, return_type)
 
     def parse_class_declaration(self) -> ClassDeclaration:
         self.expect(TokenType.CLASS)
@@ -1048,3 +1208,42 @@ class Parser:
 
         self.expect(TokenType.RBRACE)
         return LambdaExpression(parameters, body)
+
+    def parse_assert_statement(self) -> AssertStatement:
+        self.expect(TokenType.ASSERT)
+
+        # 条件式をパース
+        condition = self.parse_expression()
+
+        # オプショナルなエラーメッセージ
+        message = None
+        if self.current_token().type == TokenType.COMMA:
+            self.advance()
+            message = self.parse_expression()
+
+        self.expect_statement_end()
+        return AssertStatement(condition, message)
+
+    def parse_enum_declaration(self) -> EnumDeclaration:
+        self.expect(TokenType.ENUM)
+        name_token = self.expect(TokenType.IDENTIFIER)
+        enum_name = name_token.value
+
+        self.skip_newlines()
+        self.expect(TokenType.LBRACE)
+        self.skip_newlines()
+
+        # 列挙値をパース
+        values = []
+        while self.current_token().type != TokenType.RBRACE:
+            if self.current_token().type == TokenType.IDENTIFIER:
+                value_token = self.expect(TokenType.IDENTIFIER)
+                values.append(value_token.value)
+
+                # カンマまたは改行をスキップ
+                if self.current_token().type == TokenType.COMMA:
+                    self.advance()
+                self.skip_newlines()
+
+        self.expect(TokenType.RBRACE)
+        return EnumDeclaration(enum_name, values)

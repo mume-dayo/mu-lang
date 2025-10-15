@@ -89,8 +89,12 @@ class MMFunction:
         self.variadic_param = variadic_param  # 可変長引数名
         self.is_async = is_async  # 非同期関数かどうか
         self.is_generator = is_generator  # ジェネレーターかどうか
+        self.is_property = False  # プロパティかどうか
+        self.setter = None  # setter関数（プロパティの場合）
 
     def __repr__(self):
+        if self.is_property:
+            return f"<property {self.name}>"
         if self.is_generator:
             return f"<generator function {self.name}>"
         return f"<async function {self.name}>" if self.is_async else f"<function {self.name}>"
@@ -104,9 +108,7 @@ class MMGenerator:
         self.interpreter = interpreter
         self.exhausted = False
         self.env = None  # ジェネレーター専用の環境
-        self.stmt_index = 0  # 現在実行中の文のインデックス
-        self.in_loop = []  # ループのスタック [(loop_node, iteration_state), ...]
-        self.loop_iteration_values = {}  # ループのイテレーション状態を保存
+        self.execution_stack = []  # 実行スタック: [(statements, index, loop_state), ...]
 
     def __iter__(self):
         return self
@@ -131,32 +133,160 @@ class MMGenerator:
                 variadic_args = self.args[len(self.function.parameters):]
                 self.env.define(self.function.variadic_param, variadic_args)
 
+            # 関数本体を実行スタックに追加
+            self.execution_stack.append({
+                'statements': self.function.body,
+                'index': 0,
+                'type': 'block'
+            })
+
         # 現在の環境を保存して切り替え
         old_env = self.interpreter.current_env
         self.interpreter.current_env = self.env
 
         try:
-            # 文を1つずつ実行してyieldを探す
-            while self.stmt_index < len(self.function.body):
-                stmt = self.function.body[self.stmt_index]
-                try:
-                    self.interpreter.evaluate(stmt)
-                    self.stmt_index += 1
-                except YieldValue as yv:
-                    # yieldが実行された - 値を返して次回に備える
-                    self.stmt_index += 1
-                    return yv.value
-
-            # 全ての文を実行完了
-            self.exhausted = True
-            raise StopIteration
-
+            return self._execute_until_yield()
         except ReturnValue:
             # returnで終了
             self.exhausted = True
             raise StopIteration
         finally:
             self.interpreter.current_env = old_env
+
+    def _execute_until_yield(self):
+        """yieldが見つかるまで文を実行し続ける"""
+        while self.execution_stack:
+            frame = self.execution_stack[-1]
+            statements = frame['statements']
+            index = frame['index']
+
+            # 現在のフレームの文をすべて実行した場合
+            if index >= len(statements):
+                self.execution_stack.pop()
+
+                # ループフレームの場合は次のイテレーションへ
+                if frame['type'] == 'for_loop':
+                    loop_info = frame['loop_info']
+                    try:
+                        # 次のアイテムを取得
+                        next_item = next(loop_info['iterator'])
+                        self.env.set(loop_info['variable'], next_item)
+                        # インデックスをリセットしてループを再開
+                        frame['index'] = 0
+                        self.execution_stack.append(frame)
+                    except StopIteration:
+                        # ループ終了
+                        pass
+                elif frame['type'] == 'while_loop':
+                    loop_info = frame['loop_info']
+                    # 条件を再評価
+                    if self.interpreter.is_truthy(self.interpreter.evaluate(loop_info['condition'])):
+                        # インデックスをリセットしてループを再開
+                        frame['index'] = 0
+                        self.execution_stack.append(frame)
+                continue
+
+            # 次の文を実行
+            stmt = statements[index]
+            frame['index'] += 1
+
+            try:
+                # ループ文の特別処理
+                if isinstance(stmt, ForStatement):
+                    iterable = self.interpreter.evaluate(stmt.iterable)
+                    if not isinstance(iterable, (list, str, set, MMGenerator)):
+                        raise TypeError("for loop requires an iterable")
+
+                    iterator = iter(iterable)
+                    try:
+                        first_item = next(iterator)
+                        self.env.define(stmt.variable, first_item)
+
+                        # forループフレームを追加
+                        self.execution_stack.append({
+                            'statements': stmt.body,
+                            'index': 0,
+                            'type': 'for_loop',
+                            'loop_info': {
+                                'iterator': iterator,
+                                'variable': stmt.variable
+                            }
+                        })
+                    except StopIteration:
+                        # 空のイテラブル
+                        pass
+
+                elif isinstance(stmt, WhileStatement):
+                    # 条件を評価
+                    if self.interpreter.is_truthy(self.interpreter.evaluate(stmt.condition)):
+                        # whileループフレームを追加
+                        self.execution_stack.append({
+                            'statements': stmt.body,
+                            'index': 0,
+                            'type': 'while_loop',
+                            'loop_info': {
+                                'condition': stmt.condition
+                            }
+                        })
+
+                elif isinstance(stmt, IfStatement):
+                    condition = self.interpreter.evaluate(stmt.condition)
+                    if self.interpreter.is_truthy(condition):
+                        self.execution_stack.append({
+                            'statements': stmt.then_block,
+                            'index': 0,
+                            'type': 'block'
+                        })
+                    else:
+                        # elif branches
+                        executed = False
+                        for elif_condition, elif_body in stmt.elif_branches:
+                            if self.interpreter.is_truthy(self.interpreter.evaluate(elif_condition)):
+                                self.execution_stack.append({
+                                    'statements': elif_body,
+                                    'index': 0,
+                                    'type': 'block'
+                                })
+                                executed = True
+                                break
+
+                        # else block
+                        if not executed and stmt.else_block:
+                            self.execution_stack.append({
+                                'statements': stmt.else_block,
+                                'index': 0,
+                                'type': 'block'
+                            })
+
+                elif isinstance(stmt, YieldExpression):
+                    value = self.interpreter.evaluate(stmt.value) if stmt.value else None
+                    return value
+
+                else:
+                    # 通常の文を実行
+                    self.interpreter.evaluate(stmt)
+
+            except YieldValue as yv:
+                # yieldが実行された
+                return yv.value
+            except BreakException:
+                # ループを抜ける
+                while self.execution_stack and self.execution_stack[-1]['type'] not in ('for_loop', 'while_loop'):
+                    self.execution_stack.pop()
+                if self.execution_stack:
+                    self.execution_stack.pop()
+            except ContinueException:
+                # 現在のループイテレーションをスキップ
+                while self.execution_stack and self.execution_stack[-1]['type'] not in ('for_loop', 'while_loop'):
+                    self.execution_stack.pop()
+                if self.execution_stack:
+                    # ループフレームのインデックスを最後に設定して次のイテレーションへ
+                    loop_frame = self.execution_stack[-1]
+                    loop_frame['index'] = len(loop_frame['statements'])
+
+        # すべての文を実行完了
+        self.exhausted = True
+        raise StopIteration
 
     def __repr__(self):
         return f"<generator {self.function.name}>"
@@ -185,7 +315,15 @@ class MMInstance:
             return self.fields[name]
         # 次にメソッドを確認
         if name in self.mm_class.methods:
-            return self.mm_class.methods[name]
+            method = self.mm_class.methods[name]
+            # プロパティの場合は自動的に呼び出す
+            if isinstance(method, MMFunction) and method.is_property:
+                # selfをバインドして実行
+                from mm_interpreter import Interpreter
+                # プロパティgetterを呼び出し
+                # （インタープリターインスタンスが必要だが、ここでは簡易的に処理）
+                return method
+            return method
         # 親クラスを確認
         if self.mm_class.parent:
             if name in self.mm_class.parent.methods:
@@ -197,6 +335,31 @@ class MMInstance:
 
     def __repr__(self):
         return f"<{self.mm_class.name} instance>"
+
+
+class MMEnum:
+    """列挙型"""
+    def __init__(self, name: str, values: List[str]):
+        self.name = name
+        self.values = {}
+        # 各値をインデックスで格納
+        for i, value in enumerate(values):
+            self.values[value] = i
+
+    def __getattribute__(self, name):
+        # Pythonの特殊属性はそのまま返す
+        if name.startswith('__') and name.endswith('__'):
+            return object.__getattribute__(self, name)
+        if name in ('name', 'values'):
+            return object.__getattribute__(self, name)
+
+        values = object.__getattribute__(self, 'values')
+        if name in values:
+            return values[name]
+        raise AttributeError(f"Enum '{object.__getattribute__(self, 'name')}' has no value '{name}'")
+
+    def __repr__(self):
+        return f"<enum {self.name}>"
 
 
 class Environment:
@@ -403,6 +566,17 @@ class Interpreter:
                 raise TypeError("set_to_list() requires a set")
             return list(s)
 
+        def builtin_property(func):
+            """プロパティデコレーター"""
+            if isinstance(func, MMFunction):
+                func.is_property = True
+            return func
+
+        def builtin_setter(func):
+            """セッターデコレーター（未実装 - プレースホルダー）"""
+            # 実際のsetter実装は将来的に追加可能
+            return func
+
         self.global_env.define('print', builtin_print)
         self.global_env.define('input', builtin_input)
         self.global_env.define('len', builtin_len)
@@ -430,6 +604,10 @@ class Interpreter:
         self.global_env.define('set_intersection', builtin_set_intersection)
         self.global_env.define('set_difference', builtin_set_difference)
         self.global_env.define('set_to_list', builtin_set_to_list)
+
+        # プロパティ関連
+        self.global_env.define('property', builtin_property)
+        self.global_env.define('setter', builtin_setter)
 
         # Discord機能を追加（利用可能な場合）
         if DISCORD_AVAILABLE:
@@ -558,6 +736,15 @@ class Interpreter:
             self.current_env.set(node.name, value)
             return None
 
+        elif isinstance(node, MemberAssignment):
+            obj = self.evaluate(node.object)
+            value = self.evaluate(node.value)
+            if isinstance(obj, MMInstance):
+                obj.set(node.member, value)
+            else:
+                raise TypeError(f"Cannot set member on {type(obj).__name__}")
+            return None
+
         elif isinstance(node, MultipleAssignment):
             # 複数代入の評価
             value = self.evaluate(node.value)
@@ -589,6 +776,21 @@ class Interpreter:
                 node.is_async,
                 is_generator
             )
+
+            # デコレーターを適用
+            if node.decorators:
+                for decorator_name in reversed(node.decorators):  # 下から順に適用
+                    decorator = self.current_env.get(decorator_name)
+                    # MMFunctionとPython関数の両方をサポート
+                    if isinstance(decorator, MMFunction):
+                        # MMFunction（ユーザー定義デコレーター）を適用
+                        func = self.call_mm_function(decorator, [func])
+                    elif callable(decorator):
+                        # Python組み込みデコレーターを適用
+                        func = decorator(func)
+                    else:
+                        raise TypeError(f"'{decorator_name}' is not a decorator (not callable)")
+
             self.current_env.define(node.name, func)
             return None
 
@@ -705,6 +907,12 @@ class Interpreter:
             self.current_env.define(node.name, mm_class)
             return None
 
+        elif isinstance(node, EnumDeclaration):
+            # 列挙型の定義
+            mm_enum = MMEnum(node.name, node.values)
+            self.current_env.define(node.name, mm_enum)
+            return None
+
         elif isinstance(node, NewExpression):
             # new ClassName() でインスタンスを作成
             mm_class = self.current_env.get(node.class_name)
@@ -746,6 +954,11 @@ class Interpreter:
 
             if isinstance(obj, MMInstance):
                 return obj.get(node.member)
+            elif isinstance(obj, MMEnum):
+                # Enumの値アクセス
+                if node.member in obj.values:
+                    return obj.values[node.member]
+                raise AttributeError(f"Enum '{obj.name}' has no value '{node.member}'")
             elif isinstance(obj, dict):
                 # 辞書のキーアクセス
                 if node.member in obj:
@@ -802,6 +1015,16 @@ class Interpreter:
             raise ContinueException()
 
         elif isinstance(node, PassStatement):
+            return None
+
+        elif isinstance(node, AssertStatement):
+            condition = self.evaluate(node.condition)
+            if not self.is_truthy(condition):
+                if node.message:
+                    message = str(self.evaluate(node.message))
+                    raise AssertionError(f"Assertion failed: {message}")
+                else:
+                    raise AssertionError("Assertion failed")
             return None
 
         elif isinstance(node, ImportStatement):
