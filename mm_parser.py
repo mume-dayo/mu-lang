@@ -109,6 +109,13 @@ class FunctionCall(ASTNode):
 
 
 @dataclass
+class MemberAccessFunctionCall(ASTNode):
+    object: ASTNode  # オブジェクト（例: mod）
+    member: str  # メンバー名（例: func）
+    arguments: List[ASTNode]  # 引数
+
+
+@dataclass
 class FunctionDeclaration(ASTNode):
     name: str
     parameters: List[str]
@@ -726,6 +733,10 @@ class Parser:
 
                 if isinstance(expr, Identifier):
                     expr = FunctionCall(expr.name, arguments)
+                elif isinstance(expr, MemberAccess):
+                    # メンバーアクセスの後の関数呼び出し（例: obj.method()）
+                    # MemberAccessFunctionCallノードを作成
+                    expr = MemberAccessFunctionCall(expr.object, expr.member, arguments)
                 else:
                     raise SyntaxError("Invalid function call")
 

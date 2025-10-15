@@ -97,75 +97,66 @@ class MMFunction:
 
 
 class MMGenerator:
-    """ジェネレーターオブジェクト"""
+    """ジェネレーターオブジェクト（遅延評価版）"""
     def __init__(self, function: MMFunction, args: List[Any], interpreter):
         self.function = function
         self.args = args
         self.interpreter = interpreter
-        self.values = []  # yieldされた値を保存
-        self.index = 0  # 現在のイテレーション位置
-        self.generated = False  # 値の生成が完了したか
-
-    def _generate_values(self):
-        """全ての値を事前に生成"""
-        if self.generated:
-            return
-
-        # 環境をセットアップ
-        env = Environment(parent=self.function.closure)
-
-        # 引数をバインド
-        for i, param in enumerate(self.function.parameters):
-            if i < len(self.args):
-                env.define(param, self.args[i])
-            else:
-                env.define(param, None)
-
-        # 可変長引数を処理
-        if self.function.variadic_param:
-            variadic_args = self.args[len(self.function.parameters):]
-            env.define(self.function.variadic_param, variadic_args)
-
-        # 関数本体を実行してyieldされた値を収集
-        old_env = self.interpreter.current_env
-        self.interpreter.current_env = env
-
-        # YieldValueCollectorをインストール
-        class YieldValueCollector:
-            def __init__(self, values_list):
-                self.values = values_list
-
-        collector = YieldValueCollector(self.values)
-        self.interpreter._yield_collector = collector
-
-        try:
-            self.interpreter.evaluate_block(self.function.body)
-        except ReturnValue:
-            # returnで終了
-            pass
-        finally:
-            # コレクターを削除
-            if hasattr(self.interpreter, '_yield_collector'):
-                delattr(self.interpreter, '_yield_collector')
-            self.interpreter.current_env = old_env
-            self.generated = True
+        self.exhausted = False
+        self.env = None  # ジェネレーター専用の環境
+        self.stmt_index = 0  # 現在実行中の文のインデックス
+        self.in_loop = []  # ループのスタック [(loop_node, iteration_state), ...]
+        self.loop_iteration_values = {}  # ループのイテレーション状態を保存
 
     def __iter__(self):
-        # 最初のイテレーション時に全ての値を生成
-        self._generate_values()
-        self.index = 0
         return self
 
     def __next__(self):
-        if not self.generated:
-            self._generate_values()
-
-        if self.index >= len(self.values):
+        if self.exhausted:
             raise StopIteration
 
-        value = self.values[self.index]
-        self.index += 1
-        return value
+        # 初回実行時に環境をセットアップ
+        if self.env is None:
+            self.env = Environment(parent=self.function.closure)
+
+            # 引数をバインド
+            for i, param in enumerate(self.function.parameters):
+                if i < len(self.args):
+                    self.env.define(param, self.args[i])
+                else:
+                    self.env.define(param, None)
+
+            # 可変長引数を処理
+            if self.function.variadic_param:
+                variadic_args = self.args[len(self.function.parameters):]
+                self.env.define(self.function.variadic_param, variadic_args)
+
+        # 現在の環境を保存して切り替え
+        old_env = self.interpreter.current_env
+        self.interpreter.current_env = self.env
+
+        try:
+            # 文を1つずつ実行してyieldを探す
+            while self.stmt_index < len(self.function.body):
+                stmt = self.function.body[self.stmt_index]
+                try:
+                    self.interpreter.evaluate(stmt)
+                    self.stmt_index += 1
+                except YieldValue as yv:
+                    # yieldが実行された - 値を返して次回に備える
+                    self.stmt_index += 1
+                    return yv.value
+
+            # 全ての文を実行完了
+            self.exhausted = True
+            raise StopIteration
+
+        except ReturnValue:
+            # returnで終了
+            self.exhausted = True
+            raise StopIteration
+        finally:
+            self.interpreter.current_env = old_env
 
     def __repr__(self):
         return f"<generator {self.function.name}>"
@@ -604,18 +595,42 @@ class Interpreter:
         elif isinstance(node, FunctionCall):
             return self.evaluate_function_call(node)
 
+        elif isinstance(node, MemberAccessFunctionCall):
+            # オブジェクトのメソッド呼び出し（例: mod.func()）
+            obj = self.evaluate(node.object)
+
+            # 引数を評価
+            args = [self.evaluate(arg) for arg in node.arguments]
+
+            # Moduleオブジェクトの場合
+            if hasattr(obj, 'env'):
+                func = obj.env.get(node.member)
+                if callable(func) and not isinstance(func, MMFunction):
+                    return func(*args)
+                elif isinstance(func, MMFunction):
+                    # ユーザー定義関数の呼び出し
+                    return self.call_mm_function(func, args)
+                else:
+                    raise TypeError(f"'{node.member}' is not callable")
+
+            # MMInstanceの場合（クラスのメソッド呼び出し）
+            elif isinstance(obj, MMInstance):
+                method = obj.get(node.member)
+                if isinstance(method, MMFunction):
+                    return self.call_mm_function(method, args, obj)
+                else:
+                    raise TypeError(f"'{node.member}' is not a method")
+
+            else:
+                raise AttributeError(f"Cannot call method '{node.member}' on {type(obj).__name__}")
+
         elif isinstance(node, ReturnStatement):
             value = self.evaluate(node.value) if node.value else None
             raise ReturnValue(value)
 
         elif isinstance(node, YieldExpression):
             value = self.evaluate(node.value) if node.value else None
-            # ジェネレーターコンテキスト内であればコレクターに値を追加
-            if hasattr(self, '_yield_collector'):
-                self._yield_collector.values.append(value)
-                return None
-            else:
-                raise YieldValue(value)
+            raise YieldValue(value)
 
         elif isinstance(node, IfStatement):
             condition = self.evaluate(node.condition)
@@ -938,6 +953,86 @@ class Interpreter:
         else:
             raise NotImplementedError(f"Unary operator '{node.operator}' not implemented")
 
+    def call_mm_function(self, func: MMFunction, args: List[Any], instance=None) -> Any:
+        """MMFunction呼び出しの共通処理"""
+        # 可変長引数がある場合
+        if func.variadic_param:
+            # 通常のパラメータ数をチェック
+            if len(args) < len(func.parameters):
+                raise TypeError(
+                    f"{func.name}() takes at least {len(func.parameters)} arguments but {len(args)} were given"
+                )
+
+            # 新しい環境を作成
+            func_env = Environment(func.closure)
+
+            # 通常のパラメータをバインド
+            for param, arg in zip(func.parameters, args):
+                func_env.define(param, arg)
+
+            # 残りの引数を可変長引数としてバインド
+            remaining_args = args[len(func.parameters):]
+            func_env.define(func.variadic_param, remaining_args)
+        else:
+            # 可変長引数なし
+            if len(args) != len(func.parameters):
+                raise TypeError(
+                    f"{func.name}() takes {len(func.parameters)} arguments but {len(args)} were given"
+                )
+
+            # 新しい環境を作成
+            func_env = Environment(func.closure)
+
+            # パラメータをバインド
+            for param, arg in zip(func.parameters, args):
+                func_env.define(param, arg)
+
+        # インスタンスメソッドの場合はselfをバインド
+        if instance:
+            func_env.define('self', instance)
+
+        # ジェネレーター関数の場合はMMGeneratorを返す
+        if func.is_generator:
+            return MMGenerator(func, args, self)
+
+        # async関数の場合はAsyncTaskを返す
+        if func.is_async:
+            try:
+                from mm_async import AsyncTask
+
+                # 非同期で実行する関数を定義
+                def async_wrapper():
+                    prev_env = self.current_env
+                    self.current_env = func_env
+                    try:
+                        self.evaluate_block(func.body)
+                        return None
+                    except ReturnValue as ret:
+                        return ret.value
+                    finally:
+                        self.current_env = prev_env
+
+                # AsyncTaskを作成して開始
+                task = AsyncTask(async_wrapper)
+                task.start()
+                return task
+            except ImportError:
+                raise RuntimeError("mm_async module is required for async functions")
+
+        # 通常の関数実行
+        prev_env = self.current_env
+        self.current_env = func_env
+
+        try:
+            self.evaluate_block(func.body)
+            result = None
+        except ReturnValue as ret:
+            result = ret.value
+        finally:
+            self.current_env = prev_env
+
+        return result
+
     def evaluate_function_call(self, node: FunctionCall) -> Any:
         """関数呼び出しの評価"""
         func = self.current_env.get(node.name)
@@ -951,79 +1046,7 @@ class Interpreter:
 
         # ユーザー定義関数
         elif isinstance(func, MMFunction):
-            # 可変長引数がある場合
-            if func.variadic_param:
-                # 通常のパラメータ数をチェック
-                if len(args) < len(func.parameters):
-                    raise TypeError(
-                        f"{func.name}() takes at least {len(func.parameters)} arguments but {len(args)} were given"
-                    )
-
-                # 新しい環境を作成
-                func_env = Environment(func.closure)
-
-                # 通常のパラメータをバインド
-                for param, arg in zip(func.parameters, args):
-                    func_env.define(param, arg)
-
-                # 残りの引数を可変長引数としてバインド
-                remaining_args = args[len(func.parameters):]
-                func_env.define(func.variadic_param, remaining_args)
-            else:
-                # 可変長引数なし
-                if len(args) != len(func.parameters):
-                    raise TypeError(
-                        f"{func.name}() takes {len(func.parameters)} arguments but {len(args)} were given"
-                    )
-
-                # 新しい環境を作成
-                func_env = Environment(func.closure)
-
-                # パラメータをバインド
-                for param, arg in zip(func.parameters, args):
-                    func_env.define(param, arg)
-
-            # ジェネレーター関数の場合はMMGeneratorを返す
-            if func.is_generator:
-                return MMGenerator(func, args, self)
-
-            # async関数の場合はAsyncTaskを返す
-            if func.is_async:
-                try:
-                    from mm_async import AsyncTask
-
-                    # 非同期で実行する関数を定義
-                    def async_wrapper():
-                        prev_env = self.current_env
-                        self.current_env = func_env
-                        try:
-                            self.evaluate_block(func.body)
-                            return None
-                        except ReturnValue as ret:
-                            return ret.value
-                        finally:
-                            self.current_env = prev_env
-
-                    # AsyncTaskを作成して開始
-                    task = AsyncTask(async_wrapper)
-                    task.start()
-                    return task
-                except ImportError:
-                    raise RuntimeError("mm_async module is required for async functions")
-
-            # 通常の関数実行
-            prev_env = self.current_env
-            self.current_env = func_env
-
-            try:
-                self.evaluate_block(func.body)
-                result = None
-            except ReturnValue as ret:
-                result = ret.value
-            finally:
-                self.current_env = prev_env
-
-            return result
+            return self.call_mm_function(func, args)
 
         else:
             raise TypeError(f"'{node.name}' is not a function")
@@ -1138,10 +1161,16 @@ class Interpreter:
                 self.env = env
 
             def __getattribute__(self, name):
+                # Pythonの特殊属性はそのまま返す
+                if name.startswith('__') and name.endswith('__'):
+                    return object.__getattribute__(self, name)
                 if name == 'env':
                     return object.__getattribute__(self, 'env')
                 env = object.__getattribute__(self, 'env')
-                return env.get(name)
+                try:
+                    return env.get(name)
+                except NameError:
+                    raise AttributeError(f"module has no attribute '{name}'")
 
         module_obj = Module(module_env)
         self.current_env.define(module_name, module_obj)
