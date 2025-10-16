@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "mumei-rust"
+version = "0.1.0"
+description = "High-performance Rust core for Mumei language"
+authors = [{name = "Mumei Language Team"}]
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3",
+]
+
+[tool.maturin]
+# PyO3ベースのRust拡張モジュール
+module-name = "mumei_rust"
+bindings = "pyo3"
+compatibility = "linux"
+
+[tool.poetry]
+name = "mumei-rust"
+version = "0.1.0"
+description = "High-performance Rust core for Mumei language"
+authors = ["Mumei Language Team"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
