@@ -3,6 +3,25 @@
 Pythonをベースにした新しいプログラミング言語「Mumei」のインタプリタ実装です。
 ファイル拡張子は `.mu` を使用します。
 
+## 🚀 高性能Rust実装
+
+**メインブランチはRust実装になりました！**
+
+- **超高速**: Python版の5-10倍のパフォーマンス
+- **Rustコア**: レキサー、パーサー、インタプリタをRustで実装
+- **バイトコードVM**: コンパイル+実行の分離で最大効率
+- **Python互換**: 既存のPython実装とシームレスに統合
+
+### ブランチ構成
+
+- **`main`** (Rust版) - メインブランチ、Rust実装 + Python統合
+- **`mulang-py`** (Python版) - Python実装のみ（レガシー）
+- **`mulang-dev`** - 開発ブランチ
+- **`vscode-extension`** - VSCode拡張機能
+- **`discord-extension`** - Discord Bot拡張
+
+詳細は [RUST_QUICKSTART.md](RUST_QUICKSTART.md) と [SETUP_GUIDE.md](SETUP_GUIDE.md) を参照してください。
+
 ## 特徴
 
 - **シンプルな構文**: Pythonの影響を受けたクリーンで読みやすい構文
