@@ -448,45 +448,84 @@ for (i in range(10)) {
 
 Mumei言語では、シンプルにDiscord botを作成できます！
 
-### 🆕 d.muモジュール（推奨）
+### 🆕 Discord Botモジュール
 
-新しい`d.mu`モジュールを使えば、さらに簡単にDiscord Botを作成できます！
+Mumei言語には**2つのDiscord Bot実装**があります：
+
+#### 1. **d.mu** - Python版（discord.py使用）
+
+リアルタイムイベント対応、機能豊富。
 
 ```mu
 import "d.mu" as d;
 
-# Botを作成
 d.create_bot("!");
-
-# Bot起動時
-d.on_ready(lambda() {
-    print("Bot is ready!");
-});
-
-# コマンドを登録
-d.command("ping", lambda(ctx, args) {
-    d.reply(ctx, "Pong! 🏓");
-});
-
-# Botを起動
+d.on_ready(lambda() { print("Ready!"); });
+d.command("ping", lambda(ctx, args) { d.reply(ctx, "Pong!"); });
 d.run(env("DISCORD_TOKEN"));
 ```
 
-**特徴:**
-- ✅ シンプルで直感的なAPI
-- ✅ ボタン・セレクトメニュー対応
-- ✅ スラッシュコマンド対応
-- ✅ モデレーション機能（kick、ban、role）
-- ✅ Webhook対応
-- ✅ 完全なドキュメント
-
-詳細は [DISCORD_MODULE.md](DISCORD_MODULE.md) を参照してください。
-
-### セットアップ
-
+**セットアップ:**
 ```bash
 pip install discord.py
 ```
+
+**特徴:**
+- ✅ リアルタイムイベント（Gateway/WebSocket）
+- ✅ ボタン・セレクトメニュー
+- ✅ スラッシュコマンド
+- ✅ モーダル対応
+
+詳細は [DISCORD_MODULE.md](DISCORD_MODULE.md) を参照。
+
+#### 2. **d_rust.mu** - Rust版（**Python依存なし**）
+
+超高速、軽量、Python不要。
+
+```mu
+import "d_rust.mu" as d;
+
+d.create_bot("!");
+d.on_ready(lambda() { print("Ready!"); });
+d.command("ping", lambda(ctx, args) { d.reply(ctx, "Pong!"); });
+d.run(env("DISCORD_TOKEN"));
+
+# メッセージポーリング開始
+d.start_polling(channel_id, 5);  # 5秒ごと
+```
+
+**セットアップ:**
+```bash
+# 依存関係なし！Rustビルドのみ
+cd mumei-rust
+cargo build --release
+```
+
+**特徴:**
+- ✅ **Python依存なし** - discord.py不要
+- ✅ **超高速** - Rust実装（5-10x faster）
+- ✅ **軽量** - メモリ使用量 1/5
+- ✅ **REST API** - ポーリングベース
+- ⚠️ Gateway未対応（リアルタイムイベントなし）
+
+詳細は [DISCORD_RUST.md](DISCORD_RUST.md) を参照。
+
+#### どちらを選ぶ？
+
+| 機能 | d.mu (Python) | d_rust.mu (Rust) |
+|------|---------------|------------------|
+| リアルタイムイベント | ✅ | ❌ (ポーリング) |
+| Python依存 | ✅ 必要 | ✅ 不要 |
+| 速度 | 標準 | 🚀 5-10x |
+| メモリ | 80MB | 15MB |
+| 通知Bot | ✅ | ✅ |
+| モデレーションBot | ✅ | ✅ |
+| インタラクティブBot | ✅ | ⚠️ 制限あり |
+
+**推奨:**
+- **リアルタイムBot** → `d.mu` (Python版)
+- **通知/定期実行Bot** → `d_rust.mu` (Rust版)
+- **パフォーマンス重視** → `d_rust.mu` (Rust版)
 
 ### 従来のAPI（レガシー）
 
