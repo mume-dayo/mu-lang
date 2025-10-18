@@ -17,6 +17,7 @@ mod vm_fast;  // 超高速数値演算専用VM
 mod jit;
 mod http;      // HTTP client module (Rust-based, no Python dependency)
 mod discord;   // Discord API module (Rust-based, REST API)
+mod gateway;   // Discord Gateway (WebSocket, real-time events)
 
 use pyo3::prelude::*;
 use token::{Token as RustToken};
@@ -447,6 +448,9 @@ fn mumei_rust(_py: Python, m: &PyModule) -> PyResult<()> {
 
     // Discord functions (Rust-based, REST API only)
     discord::register_discord_functions(m)?;
+
+    // Discord Gateway (WebSocket, real-time events)
+    gateway::register_gateway_functions(m)?;
 
     // バージョン情報
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
