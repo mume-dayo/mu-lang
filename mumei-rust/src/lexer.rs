@@ -1,5 +1,4 @@
 use crate::token::{keyword_to_token_type, Token, TokenType};
-use std::collections::VecDeque;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -191,8 +190,9 @@ impl Lexer {
                 if self.match_char('=') {
                     self.add_token(TokenType::NotEqual);
                 } else {
-                    Err(LexerError::UnexpectedCharacter(c, self.line, self.column))
+                    return Err(LexerError::UnexpectedCharacter(c, self.line, self.column));
                 }
+                Ok(())
             }
             '<' => {
                 if self.match_char('=') {

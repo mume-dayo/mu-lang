@@ -54,7 +54,7 @@ impl Interpreter {
             ASTNode::Null => Ok(Value::Null),
 
             // リスト
-            ASTNode::List(elements) => {
+            ASTNode::List { elements } => {
                 let mut values = Vec::new();
                 for elem in elements {
                     values.push(self.eval_node(elem)?);
@@ -63,7 +63,7 @@ impl Interpreter {
             }
 
             // 辞書
-            ASTNode::Dictionary(pairs) => {
+            ASTNode::Dictionary { pairs } => {
                 let mut map = HashMap::new();
                 for (key_expr, value_expr) in pairs {
                     // キーを評価して文字列に変換
@@ -113,30 +113,31 @@ impl Interpreter {
 
             // 二項演算
             ASTNode::BinaryOperation { left, operator, right } => {
+                use crate::ast::BinaryOperator;
                 let left_val = self.eval_node(left)?;
                 let right_val = self.eval_node(right)?;
 
-                match operator.as_str() {
-                    "+" => left_val.add(&right_val),
-                    "-" => left_val.subtract(&right_val),
-                    "*" => left_val.multiply(&right_val),
-                    "/" => left_val.divide(&right_val),
-                    "%" => left_val.modulo(&right_val),
-                    "**" => left_val.power(&right_val),
-                    "<" => left_val.less_than(&right_val),
-                    ">" => left_val.greater_than(&right_val),
-                    "<=" => Ok(Value::Boolean(!left_val.greater_than(&right_val)?.as_boolean()?)),
-                    ">=" => Ok(Value::Boolean(!left_val.less_than(&right_val)?.as_boolean()?)),
-                    "==" => Ok(Value::Boolean(left_val.equals(&right_val))),
-                    "!=" => Ok(Value::Boolean(!left_val.equals(&right_val))),
-                    "and" => {
+                match operator {
+                    BinaryOperator::Add => left_val.add(&right_val),
+                    BinaryOperator::Subtract => left_val.subtract(&right_val),
+                    BinaryOperator::Multiply => left_val.multiply(&right_val),
+                    BinaryOperator::Divide => left_val.divide(&right_val),
+                    BinaryOperator::Modulo => left_val.modulo(&right_val),
+                    BinaryOperator::Power => left_val.power(&right_val),
+                    BinaryOperator::Less => left_val.less_than(&right_val),
+                    BinaryOperator::Greater => left_val.greater_than(&right_val),
+                    BinaryOperator::LessEqual => Ok(Value::Boolean(!left_val.greater_than(&right_val)?.as_boolean()?)),
+                    BinaryOperator::GreaterEqual => Ok(Value::Boolean(!left_val.less_than(&right_val)?.as_boolean()?)),
+                    BinaryOperator::Equal => Ok(Value::Boolean(left_val.equals(&right_val))),
+                    BinaryOperator::NotEqual => Ok(Value::Boolean(!left_val.equals(&right_val))),
+                    BinaryOperator::And => {
                         if !left_val.is_truthy() {
                             Ok(left_val)
                         } else {
                             Ok(right_val)
                         }
                     }
-                    "or" => {
+                    BinaryOperator::Or => {
                         if left_val.is_truthy() {
                             Ok(left_val)
                         } else {
@@ -149,21 +150,22 @@ impl Interpreter {
 
             // 単項演算
             ASTNode::UnaryOperation { operator, operand } => {
+                use crate::ast::UnaryOperator;
                 let val = self.eval_node(operand)?;
 
-                match operator.as_str() {
-                    "-" => {
+                match operator {
+                    UnaryOperator::Negate => {
                         let num = val.as_number()?;
                         Ok(Value::Number(-num))
                     }
-                    "not" => Ok(Value::Boolean(!val.is_truthy())),
+                    UnaryOperator::Not => Ok(Value::Boolean(!val.is_truthy())),
                     _ => Err(format!("Unknown unary operator: {}", operator)),
                 }
             }
 
             // 関数呼び出し
-            ASTNode::FunctionCall { function, arguments } => {
-                self.eval_function_call(function, arguments)
+            ASTNode::FunctionCall { callee, arguments } => {
+                self.eval_function_call(callee, arguments)
             }
 
             // インデックスアクセス
@@ -225,20 +227,31 @@ impl Interpreter {
             }
 
             // 条件分岐（if）
-            ASTNode::If { condition, then_block, else_block } => {
+            ASTNode::IfStatement { condition, then_body, elif_clauses, else_body } => {
                 let cond_val = self.eval_node(condition)?;
 
                 if cond_val.is_truthy() {
-                    self.eval_block(then_block)
-                } else if let Some(else_nodes) = else_block {
-                    self.eval_block(else_nodes)
+                    self.eval_block(then_body)
                 } else {
-                    Ok(Value::Null)
+                    // elif句を評価
+                    for (elif_cond, elif_body) in elif_clauses {
+                        let elif_val = self.eval_node(elif_cond)?;
+                        if elif_val.is_truthy() {
+                            return self.eval_block(elif_body);
+                        }
+                    }
+
+                    // else句を評価
+                    if let Some(else_nodes) = else_body {
+                        self.eval_block(else_nodes)
+                    } else {
+                        Ok(Value::Null)
+                    }
                 }
             }
 
             // while ループ
-            ASTNode::While { condition, body } => {
+            ASTNode::WhileStatement { condition, body } => {
                 let mut last_value = Value::Null;
 
                 loop {
@@ -254,7 +267,7 @@ impl Interpreter {
             }
 
             // for-in ループ
-            ASTNode::For { variable, iterable, body } => {
+            ASTNode::ForStatement { variable, iterable, body } => {
                 let iter_val = self.eval_node(iterable)?;
 
                 match iter_val {
@@ -297,8 +310,8 @@ impl Interpreter {
             }
 
             // return 文
-            ASTNode::Return(expr) => {
-                let value = if let Some(e) = expr {
+            ASTNode::ReturnStatement { value } => {
+                let return_value = if let Some(e) = value {
                     self.eval_node(e)?
                 } else {
                     Value::Null
@@ -306,27 +319,37 @@ impl Interpreter {
 
                 // returnの値を特別な形で返す（エラーとして）
                 // TODO: より良い方法でreturnを実装する
-                Err(format!("RETURN:{}", value.to_string()))
+                Err(format!("RETURN:{}", return_value.to_string()))
             }
 
             // try-catch
-            ASTNode::TryCatch { try_block, catch_var, catch_block } => {
-                match self.eval_block(try_block) {
+            ASTNode::TryCatch { try_body, catch_variable, catch_body, finally_body } => {
+                let try_result = match self.eval_block(try_body) {
                     Ok(val) => Ok(val),
                     Err(e) => {
-                        // エラーメッセージを変数に格納
-                        self.current_env.define(
-                            catch_var.clone(),
-                            Value::String(e.clone())
-                        )?;
+                        // エラーメッセージを変数に格納（catch_variableがある場合）
+                        if let Some(var) = catch_variable {
+                            self.current_env.define(
+                                var.clone(),
+                                Value::String(e.clone())
+                            )?;
+                        }
 
-                        self.eval_block(catch_block)
+                        self.eval_block(catch_body)?;
+                        Ok(Value::Null)
                     }
+                };
+
+                // finally句を実行
+                if let Some(finally_nodes) = finally_body {
+                    self.eval_block(finally_nodes)?;
                 }
+
+                try_result
             }
 
             // クラス定義
-            ASTNode::ClassDeclaration { name, parent, methods } => {
+            ASTNode::ClassDeclaration { name, parent, body } => {
                 let parent_val = if let Some(parent_name) = parent {
                     Some(Box::new(self.current_env.get(parent_name)?))
                 } else {
@@ -334,12 +357,12 @@ impl Interpreter {
                 };
 
                 let mut method_map = HashMap::new();
-                for method_node in methods {
-                    if let ASTNode::FunctionDeclaration { name: method_name, parameters, body, is_async } = method_node {
+                for method_node in body {
+                    if let ASTNode::FunctionDeclaration { name: method_name, parameters, body: method_body, is_async } = method_node {
                         let func = Value::Function {
                             name: method_name.clone(),
                             parameters: parameters.clone(),
-                            body: body.clone(),
+                            body: method_body.clone(),
                             closure: self.current_env.clone(),
                             is_async: *is_async,
                         };

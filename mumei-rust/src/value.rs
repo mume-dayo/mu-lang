@@ -6,6 +6,7 @@ use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::ast::ASTNode;
+use crate::environment::Environment;
 
 /// Mumei言語の値
 #[derive(Debug, Clone)]
@@ -33,7 +34,7 @@ pub enum Value {
         name: String,
         parameters: Vec<String>,
         body: Vec<ASTNode>,
-        closure: Rc<RefCell<HashMap<String, Value>>>,
+        closure: Rc<Environment>,
         is_async: bool,
     },
 

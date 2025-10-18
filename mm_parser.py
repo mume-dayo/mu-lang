@@ -383,6 +383,9 @@ class Parser:
             # self.field = value のような代入もサポート
             if self.peek_token().type == TokenType.ASSIGN:
                 return self.parse_assignment()
+            elif self.peek_token().type == TokenType.COMMA:
+                # 複数変数への代入: x, y = [1, 2]
+                return self.parse_multiple_assignment()
             elif self.peek_token().type == TokenType.DOT:
                 # メンバーアクセス後の代入をチェック
                 saved_pos = self.pos
@@ -453,6 +456,22 @@ class Parser:
         value = self.parse_expression()
         self.expect_statement_end()
         return Assignment(name_token.value, value)
+
+    def parse_multiple_assignment(self):
+        """複数変数への再代入: x, y = [1, 2]"""
+        # 最初の識別子を読む
+        first_name = self.expect(TokenType.IDENTIFIER).value
+        targets = [first_name]
+
+        # カンマで区切られた識別子を読む
+        while self.current_token().type == TokenType.COMMA:
+            self.advance()
+            targets.append(self.expect(TokenType.IDENTIFIER).value)
+
+        self.expect(TokenType.ASSIGN)
+        value = self.parse_expression()
+        self.expect_statement_end()
+        return MultipleAssignment(targets, value)
 
     def parse_member_assignment(self):
         """obj.member = value のようなメンバーへの代入をパース"""
@@ -913,6 +932,10 @@ class Parser:
                     # メンバーアクセスの後の関数呼び出し（例: obj.method()）
                     # MemberAccessFunctionCallノードを作成
                     expr = MemberAccessFunctionCall(expr.object, expr.member, arguments)
+                elif isinstance(expr, LambdaExpression):
+                    # ラムダ式の即座実行（IIFE）をサポート
+                    # FunctionCallノードに変換
+                    expr = FunctionCall(expr, arguments)
                 else:
                     raise SyntaxError("Invalid function call")
 
@@ -1011,6 +1034,7 @@ class Parser:
 
     def parse_list_literal(self):
         self.expect(TokenType.LBRACKET)
+        self.skip_newlines()  # 開きブラケット後の改行をスキップ
 
         if self.current_token().type == TokenType.RBRACKET:
             self.advance()
@@ -1043,15 +1067,19 @@ class Parser:
         elements = [first_expr]
         while self.current_token().type == TokenType.COMMA:
             self.advance()
+            self.skip_newlines()  # カンマ後の改行をスキップ
             if self.current_token().type == TokenType.RBRACKET:
                 break
             elements.append(self.parse_expression())
+            self.skip_newlines()  # 要素後の改行をスキップ
 
+        self.skip_newlines()  # 最後の改行をスキップ
         self.expect(TokenType.RBRACKET)
         return ListLiteral(elements)
 
     def parse_dict_literal(self):
         self.expect(TokenType.LBRACE)
+        self.skip_newlines()  # 開きブレース後の改行をスキップ
 
         if self.current_token().type == TokenType.RBRACE:
             self.advance()
@@ -1086,13 +1114,18 @@ class Parser:
         pairs = [(key, value)]
         while self.current_token().type == TokenType.COMMA:
             self.advance()
+            self.skip_newlines()  # カンマ後の改行をスキップ
             if self.current_token().type == TokenType.RBRACE:
                 break
             key = self.parse_expression()
+            self.skip_newlines()  # キー後の改行をスキップ
             self.expect(TokenType.COLON)
+            self.skip_newlines()  # コロン後の改行をスキップ
             value = self.parse_expression()
+            self.skip_newlines()  # 値後の改行をスキップ
             pairs.append((key, value))
 
+        self.skip_newlines()  # 最後の改行をスキップ
         self.expect(TokenType.RBRACE)
         return DictLiteral(pairs)
 
@@ -1213,15 +1246,20 @@ class Parser:
 
             while self.current_token().type == TokenType.COMMA:
                 self.advance()
+                self.skip_newlines()  # カンマ後の改行をスキップ
                 param_token = self.expect(TokenType.IDENTIFIER)
                 parameters.append(param_token.value)
 
+        self.skip_newlines()  # パラメータリスト後の改行をスキップ
         self.expect(TokenType.RPAREN)
+        self.skip_newlines()  # ) 後の改行をスキップ
         self.expect(TokenType.LBRACE)
+        self.skip_newlines()  # { 後の改行をスキップ
 
         # ラムダ本体は単一の式
         body = self.parse_expression()
 
+        self.skip_newlines()  # 式後の改行をスキップ
         self.expect(TokenType.RBRACE)
         return LambdaExpression(parameters, body)
 

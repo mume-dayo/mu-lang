@@ -1145,12 +1145,12 @@ class Interpreter:
             match_value = self.evaluate(node.expression)
 
             for pattern, body in node.cases:
-                # 簡易版パターンマッチング（値の等価性のみ）
-                pattern_value = self.evaluate(pattern)
-
                 # _は全てにマッチ（デフォルトケース）
                 if isinstance(pattern, Identifier) and pattern.name == '_':
                     return self.evaluate_block(body)
+
+                # 簡易版パターンマッチング（値の等価性のみ）
+                pattern_value = self.evaluate(pattern)
 
                 # 値の等価性チェック
                 if match_value == pattern_value:
@@ -1345,7 +1345,11 @@ class Interpreter:
 
     def evaluate_function_call(self, node: FunctionCall) -> Any:
         """関数呼び出しの評価"""
-        func = self.current_env.get(node.name)
+        # node.nameがLambdaExpressionの場合（IIFE）、評価して関数オブジェクトを取得
+        if isinstance(node.name, LambdaExpression):
+            func = self.evaluate(node.name)
+        else:
+            func = self.current_env.get(node.name)
 
         # 引数を評価
         args = [self.evaluate(arg) for arg in node.arguments]
@@ -1359,7 +1363,8 @@ class Interpreter:
             return self.call_mm_function(func, args)
 
         else:
-            raise TypeError(f"'{node.name}' is not a function")
+            func_name = node.name if isinstance(node.name, str) else "<lambda>"
+            raise TypeError(f"'{func_name}' is not a function")
 
     def is_truthy(self, value: Any) -> bool:
         """真偽値判定"""
