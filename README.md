@@ -448,13 +448,47 @@ for (i in range(10)) {
 
 Mumei言語では、シンプルにDiscord botを作成できます！
 
+### 🆕 d.muモジュール（推奨）
+
+新しい`d.mu`モジュールを使えば、さらに簡単にDiscord Botを作成できます！
+
+```mu
+import "d.mu" as d;
+
+# Botを作成
+d.create_bot("!");
+
+# Bot起動時
+d.on_ready(lambda() {
+    print("Bot is ready!");
+});
+
+# コマンドを登録
+d.command("ping", lambda(ctx, args) {
+    d.reply(ctx, "Pong! 🏓");
+});
+
+# Botを起動
+d.run(env("DISCORD_TOKEN"));
+```
+
+**特徴:**
+- ✅ シンプルで直感的なAPI
+- ✅ ボタン・セレクトメニュー対応
+- ✅ スラッシュコマンド対応
+- ✅ モデレーション機能（kick、ban、role）
+- ✅ Webhook対応
+- ✅ 完全なドキュメント
+
+詳細は [DISCORD_MODULE.md](DISCORD_MODULE.md) を参照してください。
+
 ### セットアップ
 
 ```bash
 pip install discord.py
 ```
 
-### 最小構成のBot
+### 従来のAPI（レガシー）
 
 ```mu
 # Botを作成
