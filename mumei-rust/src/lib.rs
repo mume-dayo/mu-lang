@@ -15,6 +15,8 @@ mod vm;
 mod vm_fast;  // 超高速数値演算専用VM
 // mod cache;  // Disabled due to thread-safety issues with Rc<Environment>
 mod jit;
+mod http;      // HTTP client module (Rust-based, no Python dependency)
+mod discord;   // Discord API module (Rust-based, REST API)
 
 use pyo3::prelude::*;
 use token::{Token as RustToken};
@@ -439,6 +441,12 @@ fn mumei_rust(_py: Python, m: &PyModule) -> PyResult<()> {
 
     // クラス
     m.add_class::<Token>()?;
+
+    // HTTP functions (Rust-based, no Python dependency)
+    http::register_http_functions(m)?;
+
+    // Discord functions (Rust-based, REST API only)
+    discord::register_discord_functions(m)?;
 
     // バージョン情報
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
