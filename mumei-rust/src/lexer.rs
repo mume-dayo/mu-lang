@@ -189,10 +189,10 @@ impl Lexer {
             '!' => {
                 if self.match_char('=') {
                     self.add_token(TokenType::NotEqual);
+                    Ok(())
                 } else {
-                    return Err(LexerError::UnexpectedCharacter(c, self.line, self.column));
+                    Err(LexerError::UnexpectedCharacter(c, self.line, self.column))
                 }
-                Ok(())
             }
             '<' => {
                 if self.match_char('=') {
